@@ -1,6 +1,6 @@
-# Personal Online Datastore
+# Agent POD
 
-This project aims to solve the problem of capturing all your digital personal data and store it into a single place that you control. Inspired by [SOLID from Tim Berners-Lee](<https://en.wikipedia.org/wiki/Solid_(web_decentralization_project)>) this project uses the same terminology of a POD, without prioritizing other requirements of the [SOLID protocol](https://solidproject.org/TR/protocol). This project shares the same ultimate goal of SOLID: to allow users to have full control of their own data, including access control and storage location.
+This project aims to solve the problem of capturing all your digital personal data and store it into a single place that you control, then allowing a simple interface for agents to do things with your data. Inspired by [SOLID from Tim Berners-Lee](<https://en.wikipedia.org/wiki/Solid_(web_decentralization_project)>) this project uses the same terminology of a POD, without prioritizing other requirements of the [SOLID protocol](https://solidproject.org/TR/protocol). This project shares the same ultimate goal of SOLID: to allow users to have full control of their own data, including access control and storage location.
 
 There are many questions unanswered, and in this project I aim to link any work I do to get answers (and better questions).
 
@@ -24,3 +24,7 @@ What im interested in is how we can transition from traditional apps to apps tha
 - [ip-camera-to-s3-macos](ip-camera-to-s3-macos/) - Battery-efficient RTSP video capture and S3 upload utility optimized for macOS (Apple Silicon)
 - [yaptabber](yaptabber/) - Yaptabber uploads your screen, video, and mic to your s3 whenever there's sound detected, with a minimum length of 10 seconds.
 - [export-safari](export-safari/) - Export your Safari history every hour and upload it to a D1 database
+
+**POD Servers**
+
+I soon aim to create a POD server that uses [simplerauth](https://github.com/janwilmake/universal-mcp-oauth/tree/main/simplerauth-client) for authentication, then offers a SOLID-like API that allows apps to easily read and write data to it. We can use [Durable Objects](https://developers.cloudflare.com/durable-objects/) for storage.
