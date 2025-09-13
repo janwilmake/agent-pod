@@ -28,3 +28,5 @@ What im interested in is how we can transition from traditional apps to apps tha
 **POD Servers**
 
 I soon aim to create a POD server that uses [simplerauth](https://github.com/janwilmake/universal-mcp-oauth/tree/main/simplerauth-client) for authentication, then offers a SOLID-like API that allows apps to easily read and write data to it. We can use [Durable Objects](https://developers.cloudflare.com/durable-objects/) for storage.
+
+Let me know if you want to be involved!
