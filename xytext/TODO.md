@@ -1,3 +1,11 @@
+# NEW TODO
+
+- needs mcp-compatible oauth (https://github.com/janwilmake/universal-mcp-oauth/tree/main/simplerauth-client)
+- rip out all frontend, focus on the API and building apps on top
+- the frontend is basically an app! the terminal is another one
+
+# OLD TODO
+
 ## Fix filebug
 
 When I do a script endtag, the page breaks. need lol-html for data object, may be fixed with inserting monacobro

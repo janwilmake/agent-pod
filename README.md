@@ -38,3 +38,5 @@ Large Platforms like X, Facebook, and GitHub create data siloes and take ownersh
 # Let's make this real
 
 Let me know if you want to be involved!
+
+## next steps
