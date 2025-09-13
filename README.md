@@ -25,10 +25,16 @@ What im interested in is how we can transition from traditional apps to apps tha
 - [yaptabber](yaptabber/) - Yaptabber uploads your screen, video, and mic to your s3 whenever there's sound detected, with a minimum length of 10 seconds.
 - [export-safari](export-safari/) - Export your Safari history every hour and upload it to a D1 database
 
+**Platform Data Sync**
+
+Large Platforms like X, Facebook, and GitHub create data siloes and take ownership of your data, yet seem to remain popular. There needs to be a way to easily access all data from all these apps in one place.
+
+- [markdownfeed](markdownfeed/) - X timeline data sync
+
 **POD Servers**
 
 - [xytext](xytext/) - Early prototype of a 'POD server' that uses X OAuth for authentication and a minimal monaco-based interface for file editing. Needs to move to MCP-compatible oauth, and needs to offer a SOLID-like API that allows apps to easily read and write data to it.
 
-Let me know if you want to be involved!
+# Let's make this real
 
-# Other related projects
+Let me know if you want to be involved!
