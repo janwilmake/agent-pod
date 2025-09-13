@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250606.0"
+  },
+  "dependencies": {
+    "queryable-object": "^0.0.8"
+  }
+}
