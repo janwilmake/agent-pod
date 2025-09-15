@@ -21,13 +21,15 @@ OpenAPI spec: https://server.agent-pod.com/openapi.yaml
 
 # TODO
 
-- Let's get DB access with client https://admin.agent-pod.com (requests full scopes, and full scopes should give access to /query endpoint)
+- Let's create ability for DB access with a new client: https://admin.agent-pod.com (requests full scopes, and full scopes should give access to `/query` endpoint)
 - Ensure file/folder-creation actually works. Seems not the case now! The GET `/` should actually present available files according to the scopes.
 - Once it works, creating apps that have a file system will become much easier:
   - Take [xytext](../xytext/) and build this frontend against this oauth provider. Should store username to access token map to also make everything publicly accessible (read-only).
   - Build a fs MCP
   - build a web-based terminal for it
   - build a fs sync for MacOS so I can keep using browser fs functionality like downloading and selecting files: https://letmeprompt.com/in-which-ways-do-b-3xdzoa0
-- see how this differs from https://solidproject.org/TR/protocol and if its worth refactoring it towards it - https://letmeprompt.com/rules-httpsuithu-wknp8p0
+- See how this differs from https://solidproject.org/TR/protocol and if its worth refactoring it towards it - https://letmeprompt.com/rules-httpsuithu-wknp8p0
+- Add binary file storage by connecting an R2 bucket with username prefix. The node can just have the URL inthere and have `type:binary`, and fetching this can be handled before responding.
+- Consider granting read/write scope by default to `clients/{client_id}/*`, reserving this space for any client.
 
 This now opens the door for doing much more because it allows easily making web-based apps that use a central file system without owning the data.
