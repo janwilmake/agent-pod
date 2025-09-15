@@ -4,6 +4,7 @@
   "main": "main.ts",
   "compatibility_date": "2025-09-15",
   "dev": { "port": 3000 },
+  "assets": { "directory": "./" },
   "durable_objects": {
     "bindings": [
       { "name": "TEXT", "class_name": "TextDO" },
