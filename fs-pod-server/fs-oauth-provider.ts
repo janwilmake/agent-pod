@@ -1,6 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 /// <reference lib="esnext" />
-//https://letmeprompt.com/rules-httpsuithu-pmz52g0
+
 import { DurableObject } from "cloudflare:workers";
 import { getMultiStub } from "multistub";
 import {
@@ -17,6 +17,7 @@ export interface Env {
   ENCRYPTION_SECRET: string;
   ADMIN_X_USERNAME: string;
   UserDO: DurableObjectNamespace<UserDO & QueryableHandler>;
+  TEXT: DurableObjectNamespace<any>; // Reference to TextDO for file system access
 }
 
 export interface XUser {
@@ -36,6 +37,18 @@ interface OAuthState {
   redirectUri: string;
   state?: string;
   scopes: string[];
+}
+
+interface FileNode {
+  id: number;
+  path: string;
+  name: string;
+  parent_path: string | null;
+  type: "file" | "folder";
+  size: number;
+  created_at: number;
+  updated_at: number;
+  content?: string;
 }
 
 // Helper function for CORS headers
@@ -213,6 +226,31 @@ export class UserDO extends DurableObject {
       );
     }
   }
+
+  async getUserFiles(userId: string): Promise<FileNode[]> {
+    if (!this.env.TEXT) return [];
+
+    try {
+      const textDO = this.env.TEXT.get(
+        this.env.TEXT.idFromName(`${userId}:v1`)
+      );
+
+      // Get all files for this user
+      const response = await textDO.fetch(
+        new Request("http://localhost/", {
+          headers: { "x-username": userId },
+        })
+      );
+
+      if (!response.ok) return [];
+
+      const data = (await response.json()) as { files?: FileNode[] };
+      return data.files || [];
+    } catch (error) {
+      console.error("Error fetching user files:", error);
+      return [];
+    }
+  }
 }
 
 export async function handleResourceOAuth(
@@ -225,6 +263,13 @@ export async function handleResourceOAuth(
 
   if (!env.X_OAUTH_PROVIDER_URL || !env.SELF_CLIENT_ID || !env.UserDO) {
     return new Response("Environment misconfigured", { status: 500 });
+  }
+
+  // Demo endpoint
+  if (path === "/demo.html") {
+    return new Response(getDemoHTML(url.origin), {
+      headers: { "Content-Type": "text/html" },
+    });
   }
 
   // OAuth metadata endpoints
@@ -240,7 +285,11 @@ export async function handleResourceOAuth(
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code"],
       code_challenge_methods_supported: ["S256"],
-      scopes_supported: ["read", "write", "append"], // Base scopes, resources added dynamically
+      scopes_supported: [
+        "read:{resource}",
+        "write:{resource}",
+        "append:{resource}",
+      ],
     };
 
     return new Response(JSON.stringify(metadata, null, 2), {
@@ -254,7 +303,11 @@ export async function handleResourceOAuth(
     const metadata = {
       resource: url.origin,
       authorization_servers: [url.origin],
-      scopes_supported: ["read", "write", "append"],
+      scopes_supported: [
+        "read:{resource}",
+        "write:{resource}",
+        "append:{resource}",
+      ],
       bearer_methods_supported: ["header"],
       resource_documentation: url.origin,
     };
@@ -383,6 +436,10 @@ export async function handleResourceOAuth(
     return handleMe(request, env, ctx);
   }
 
+  if (path === "/callback") {
+    return handleCallback(request, env, ctx);
+  }
+
   return null;
 }
 
@@ -425,13 +482,14 @@ async function handleAuthorize(
     });
   }
 
-  // Check if user is already authenticated with X provider
-  const accessToken = getAccessToken(request);
-  if (accessToken) {
-    // Try to get user from X provider
+  // Check if user is already authenticated with X provider by calling /me
+  const cookies = parseCookies(request.headers.get("Cookie") || "");
+  const xAccessToken = cookies.x_access_token;
+
+  if (xAccessToken) {
     try {
       const userResponse = await fetch(`${env.X_OAUTH_PROVIDER_URL}/me`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: `Bearer ${xAccessToken}` },
       });
 
       if (userResponse.ok) {
@@ -443,11 +501,13 @@ async function handleAuthorize(
           redirectUri,
           state,
           requestedScopes,
-          resource
+          resource,
+          env,
+          ctx
         );
       }
     } catch (error) {
-      // Continue to X provider auth
+      console.error("Error checking X provider authentication:", error);
     }
   }
 
@@ -473,6 +533,8 @@ async function handleAuthorize(
   xAuthUrl.searchParams.set("code_challenge", codeChallenge);
   xAuthUrl.searchParams.set("code_challenge_method", "S256");
 
+  const secureFlag = isLocalhost(request) ? "" : " Secure;";
+
   return new Response(null, {
     status: 302,
     headers: {
@@ -480,29 +542,184 @@ async function handleAuthorize(
       Location: xAuthUrl.toString(),
       "Set-Cookie": `oauth_state=${encodeURIComponent(
         stateString
-      )}; HttpOnly; SameSite=Lax; Max-Age=600; Path=/`,
+      )}; HttpOnly;${secureFlag} SameSite=Lax; Max-Age=600; Path=/`,
     },
   });
 }
 
-function showConsentPage(
+async function handleCallback(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext
+): Promise<Response> {
+  if (request.method === "OPTIONS") return handleOptionsRequest();
+
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const stateParam = url.searchParams.get("state");
+
+  if (!code || !stateParam) {
+    return new Response("Missing code or state parameter", {
+      status: 400,
+      headers: getCorsHeaders(),
+    });
+  }
+
+  // Get state from cookie
+  const cookies = parseCookies(request.headers.get("Cookie") || "");
+  const stateCookie = cookies.oauth_state;
+
+  if (!stateCookie || stateCookie !== stateParam) {
+    return new Response("Invalid state", {
+      status: 400,
+      headers: getCorsHeaders(),
+    });
+  }
+
+  let oauthState: OAuthState;
+  try {
+    oauthState = JSON.parse(atob(stateCookie));
+  } catch {
+    return new Response("Invalid state format", {
+      status: 400,
+      headers: getCorsHeaders(),
+    });
+  }
+
+  // Exchange code for token with X provider
+  const tokenResponse = await fetch(`${env.X_OAUTH_PROVIDER_URL}/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      code: code,
+      client_id: env.SELF_CLIENT_ID,
+      redirect_uri: `${url.origin}/callback`,
+      resource: env.X_OAUTH_PROVIDER_URL,
+      grant_type: "authorization_code",
+      code_verifier: oauthState.codeVerifier,
+    }),
+  });
+
+  if (!tokenResponse.ok) {
+    const errorText = await tokenResponse.text();
+    console.error("X provider token exchange failed:", errorText);
+    return new Response(`Authentication failed: ${errorText}`, {
+      status: 400,
+      headers: getCorsHeaders(),
+    });
+  }
+
+  const tokenData = (await tokenResponse.json()) as any;
+  const xAccessToken = tokenData.access_token;
+
+  // Get user info from X provider
+  const userResponse = await fetch(`${env.X_OAUTH_PROVIDER_URL}/me`, {
+    headers: { Authorization: `Bearer ${xAccessToken}` },
+  });
+
+  if (!userResponse.ok) {
+    return new Response("Failed to get user info", {
+      status: 400,
+      headers: getCorsHeaders(),
+    });
+  }
+
+  const user = (await userResponse.json()) as XUser;
+
+  // Store user in our database
+  const userDO = getMultiStub(
+    env.UserDO,
+    [
+      { name: `${USER_DO_PREFIX}${user.id}` },
+      { name: `${USER_DO_PREFIX}aggregate:` },
+    ],
+    ctx
+  );
+
+  await userDO.setUser(user, xAccessToken);
+
+  // Show consent page for the resource scopes
+  const secureFlag = isLocalhost(request) ? "" : " Secure;";
+  const consentPageResponse = await showConsentPage(
+    user,
+    oauthState.clientId,
+    oauthState.redirectUri,
+    oauthState.state,
+    oauthState.scopes,
+    oauthState.resource,
+    env,
+    ctx
+  );
+
+  // Set X access token cookie and clear oauth state
+  const headers = new Headers(consentPageResponse.headers);
+  headers.append(
+    "Set-Cookie",
+    `x_access_token=${xAccessToken}; HttpOnly;${secureFlag} SameSite=Lax; Max-Age=3600; Path=/`
+  );
+  headers.append(
+    "Set-Cookie",
+    `oauth_state=; HttpOnly;${secureFlag} SameSite=Lax; Max-Age=0; Path=/`
+  );
+
+  return new Response(consentPageResponse.body, {
+    status: consentPageResponse.status,
+    headers,
+  });
+}
+
+async function showConsentPage(
   user: XUser,
   clientId: string,
   redirectUri: string,
   state: string | null,
   scopes: string[],
-  resource: string | null
-): Response {
-  // Parse scopes to show user-friendly descriptions
-  const scopeDescriptions = scopes.map((scope) => {
-    const [action, res] = scope.split(":");
-    return {
-      scope,
-      action,
-      resource: res || "all files",
-      description: getScopeDescription(action, res),
-    };
-  });
+  resource: string | null,
+  env: Env,
+  ctx: ExecutionContext
+): Promise<Response> {
+  // Get user's files for the file selector
+  const userDO = env.UserDO.get(
+    env.UserDO.idFromName(`${USER_DO_PREFIX}${user.id}`)
+  );
+  const userFiles = await userDO.getUserFiles(user.username);
+
+  // Separate variable scopes from specific scopes
+  const variableScopes: string[] = [];
+  const specificScopes: {
+    scope: string;
+    exists: boolean;
+    action: string;
+    resource: string;
+  }[] = [];
+
+  for (const scope of scopes) {
+    if (scope.includes(":{resource}") || scope.includes(":{*}")) {
+      // Extract the action part (read, write, append)
+      const action = scope.split(":")[0];
+      if (!variableScopes.includes(action)) {
+        variableScopes.push(action);
+      }
+    } else if (scope.includes(":")) {
+      const [action, res] = scope.split(":", 2);
+      const fullPath = `/${user.username}/${res}`;
+      const exists = userFiles.some((file) => file.path === fullPath);
+      specificScopes.push({ scope, exists, action, resource: res });
+    } else {
+      // Plain scope like "read", "write", "append"
+      specificScopes.push({
+        scope,
+        exists: true,
+        action: scope,
+        resource: "all files",
+      });
+    }
+  }
+
+  const hasVariableScopes = variableScopes.length > 0;
+  const hasSpecificScopes = specificScopes.length > 0;
 
   const html = `
 <!DOCTYPE html>
@@ -511,65 +728,339 @@ function showConsentPage(
     <title>Authorize ${clientId}</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <style>
-        body { font-family: system-ui; max-width: 400px; margin: 100px auto; padding: 20px; }
-        .user-info { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding: 16px; border: 1px solid #ddd; border-radius: 8px; }
-        .avatar { width: 48px; height: 48px; border-radius: 50%; }
-        .scopes { margin: 20px 0; }
-        .scope-item { padding: 8px; margin: 4px 0; background: #f5f5f5; border-radius: 4px; }
-        .actions { display: flex; gap: 12px; }
-        button { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; }
-        .approve { background: #007bff; color: white; }
-        .deny { background: #6c757d; color: white; }
-    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
-<body>
-    <h2>Authorize ${clientId}</h2>
-    
-    <div class="user-info">
-        <img src="${user.profile_image_url || ""}" alt="Avatar" class="avatar">
-        <div>
-            <div><strong>${user.name}</strong></div>
-            <div>@${user.username}</div>
+<body class="bg-gray-50 min-h-screen py-8">
+    <div class="max-w-2xl mx-auto">
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-8 py-6">
+                <h1 class="text-2xl font-bold text-white">Authorize Application</h1>
+                <p class="text-blue-100 mt-1">Grant access to your files</p>
+            </div>
+
+            <div class="p-8">
+                <!-- User Info -->
+                <div class="flex items-center space-x-4 mb-8 p-4 bg-gray-50 rounded-lg">
+                    <img src="${
+                      user.profile_image_url || "https://via.placeholder.com/48"
+                    }" 
+                         alt="Avatar" 
+                         class="w-12 h-12 rounded-full border-2 border-gray-200">
+                    <div>
+                        <div class="font-semibold text-gray-900">${
+                          user.name
+                        }</div>
+                        <div class="text-gray-600 flex items-center">
+                            <span>@${user.username}</span>
+                            ${
+                              user.verified
+                                ? '<i class="fas fa-check-circle text-blue-500 ml-2"></i>'
+                                : ""
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Client Info -->
+                <div class="mb-8 p-4 border-l-4 border-blue-500 bg-blue-50">
+                    <p class="text-gray-700">
+                        <strong class="text-blue-700">${clientId}</strong> wants to access your files with the following permissions:
+                    </p>
+                </div>
+
+                <form method="POST" action="/consent" class="space-y-6">
+                    <input type="hidden" name="client_id" value="${clientId}">
+                    <input type="hidden" name="redirect_uri" value="${redirectUri}">
+                    <input type="hidden" name="state" value="${state || ""}">
+                    <input type="hidden" name="resource" value="${
+                      resource || ""
+                    }">
+                    <input type="hidden" name="user_id" value="${user.id}">
+                    <input type="hidden" name="original_scopes" value="${scopes.join(
+                      " "
+                    )}">
+
+                    ${
+                      hasVariableScopes
+                        ? `
+                    <!-- Variable Permissions -->
+                    <div class="bg-blue-50 rounded-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                            <i class="fas fa-sliders-h text-blue-600 mr-2"></i>
+                            Resource Permissions
+                        </h3>
+                        <p class="text-gray-700 mb-4">The application requests the following permissions:</p>
+                        
+                        <div class="flex flex-wrap gap-2 mb-6">
+                            ${variableScopes
+                              .map(
+                                (action) => `
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getPermissionBadgeColor(
+                                  action
+                                )} text-white">
+                                    <i class="${getPermissionIcon(
+                                      action
+                                    )} mr-1"></i>
+                                    ${action.toUpperCase()}
+                                </span>
+                            `
+                              )
+                              .join("")}
+                        </div>
+
+                        <p class="text-gray-700 mb-4">Select which files or folders these permissions should apply to:</p>
+                        
+                        <!-- File Selector -->
+                        <div class="border border-gray-200 rounded-lg">
+                            <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-medium text-gray-900">Your Files</span>
+                                    <button type="button" onclick="toggleSelectAll()" id="selectAllBtn" class="text-blue-600 hover:text-blue-800 text-sm">
+                                        Select All
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="max-h-64 overflow-y-auto">
+                                ${generateFileTree(userFiles, user.username)}
+                            </div>
+                        </div>
+
+                        <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <div class="flex items-start">
+                                <i class="fas fa-exclamation-triangle text-yellow-600 mt-1 mr-2"></i>
+                                <div>
+                                    <p class="text-sm text-yellow-800">
+                                        <strong>Note:</strong> You must select at least one resource to continue.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <input type="hidden" name="selected_resources" id="selectedResources" value="">
+                    </div>
+                    `
+                        : ""
+                    }
+
+                    ${
+                      hasSpecificScopes
+                        ? `
+                    <!-- Specific Permissions -->
+                    <div class="space-y-3">
+                        <h3 class="text-lg font-semibold text-gray-900">
+                            <i class="fas fa-file-alt text-green-600 mr-2"></i>
+                            Specific Permissions
+                        </h3>
+                        <div class="space-y-3">
+                            ${specificScopes
+                              .map(
+                                (s) => `
+                                <div class="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                                    <div class="flex-1">
+                                        <div class="flex items-center space-x-3">
+                                            <span class="inline-flex items-center px-2 py-1 rounded text-sm font-medium ${getPermissionBadgeColor(
+                                              s.action
+                                            )} text-white">
+                                                <i class="${getPermissionIcon(
+                                                  s.action
+                                                )} mr-1"></i>
+                                                ${s.action.toUpperCase()}
+                                            </span>
+                                            <span class="font-medium text-gray-900">${
+                                              s.resource
+                                            }</span>
+                                        </div>
+                                        <p class="text-sm text-gray-600 mt-1">${getScopeDescription(
+                                          s.action,
+                                          s.resource
+                                        )}</p>
+                                    </div>
+                                    <div class="ml-4">
+                                        ${
+                                          s.exists
+                                            ? `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                               <i class="fas fa-check mr-1"></i>Exists
+                                             </span>`
+                                            : `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                               <i class="fas fa-times mr-1"></i>Not Found
+                                             </span>`
+                                        }
+                                    </div>
+                                </div>
+                            `
+                              )
+                              .join("")}
+                        </div>
+                    </div>
+                    `
+                        : ""
+                    }
+
+                    <!-- Action Buttons -->
+                    <div class="flex space-x-4 pt-6 border-t border-gray-200">
+                        <button type="submit" 
+                                name="action" 
+                                value="approve" 
+                                ${
+                                  hasVariableScopes
+                                    ? 'id="approveBtn" disabled'
+                                    : ""
+                                }
+                                class="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center">
+                            <i class="fas fa-check mr-2"></i>
+                            Authorize
+                        </button>
+                        <button type="submit" 
+                                name="action" 
+                                value="deny" 
+                                class="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center">
+                            <i class="fas fa-times mr-2"></i>
+                            Deny
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
-    <p><strong>${clientId}</strong> wants to access your files with the following permissions:</p>
-    
-    <div class="scopes">
-        ${scopeDescriptions
-          .map(
-            (s) => `
-            <div class="scope-item">
-                <strong>${s.action.toUpperCase()}</strong> access to <strong>${
-              s.resource
-            }</strong>
-                <div style="font-size: 0.9em; color: #666;">${
-                  s.description
-                }</div>
-            </div>
-        `
-          )
-          .join("")}
-    </div>
-
-    <form method="POST" action="/consent" class="actions">
-        <input type="hidden" name="client_id" value="${clientId}">
-        <input type="hidden" name="redirect_uri" value="${redirectUri}">
-        <input type="hidden" name="state" value="${state || ""}">
-        <input type="hidden" name="scopes" value="${scopes.join(" ")}">
-        <input type="hidden" name="resource" value="${resource || ""}">
-        <input type="hidden" name="user_id" value="${user.id}">
+    <script>
+        let selectedResources = new Set();
         
-        <button type="submit" name="action" value="approve" class="approve">Authorize</button>
-        <button type="submit" name="action" value="deny" class="deny">Deny</button>
-    </form>
+        function toggleResource(checkbox, path) {
+            if (checkbox.checked) {
+                selectedResources.add(path);
+            } else {
+                selectedResources.delete(path);
+            }
+            updateSelectedResources();
+            updateApproveButton();
+            updateSelectAllButton();
+        }
+        
+        function toggleSelectAll() {
+            const checkboxes = document.querySelectorAll('.resource-checkbox');
+            const allSelected = Array.from(checkboxes).every(cb => cb.checked);
+            
+            checkboxes.forEach(cb => {
+                cb.checked = !allSelected;
+                const path = cb.getAttribute('data-path');
+                if (cb.checked) {
+                    selectedResources.add(path);
+                } else {
+                    selectedResources.delete(path);
+                }
+            });
+            
+            updateSelectedResources();
+            updateApproveButton();
+            updateSelectAllButton();
+        }
+        
+        function updateSelectedResources() {
+            document.getElementById('selectedResources').value = JSON.stringify(Array.from(selectedResources));
+        }
+        
+        function updateApproveButton() {
+            const approveBtn = document.getElementById('approveBtn');
+            if (approveBtn) {
+                approveBtn.disabled = ${
+                  hasVariableScopes ? "selectedResources.size === 0" : "false"
+                };
+            }
+        }
+        
+        function updateSelectAllButton() {
+            const selectAllBtn = document.getElementById('selectAllBtn');
+            const checkboxes = document.querySelectorAll('.resource-checkbox');
+            
+            if (selectAllBtn && checkboxes.length > 0) {
+                const allSelected = Array.from(checkboxes).every(cb => cb.checked);
+                selectAllBtn.textContent = allSelected ? 'Deselect All' : 'Select All';
+            }
+        }
+    </script>
 </body>
 </html>`;
 
   return new Response(html, {
     headers: { ...getCorsHeaders(), "Content-Type": "text/html" },
   });
+}
+
+function generateFileTree(files: FileNode[], username: string): string {
+  if (files.length === 0) {
+    return `
+      <div class="p-8 text-center text-gray-500">
+        <i class="fas fa-folder-open text-4xl mb-4"></i>
+        <p>No files found</p>
+        <p class="text-sm">Create some files first to grant access</p>
+      </div>
+    `;
+  }
+
+  // Filter files to only show user's files and sort them
+  const userFiles = files
+    .filter((f) => f.path.startsWith(`/${username}/`))
+    .sort((a, b) => {
+      // Folders first, then files, then alphabetically
+      if (a.type !== b.type) {
+        return a.type === "folder" ? -1 : 1;
+      }
+      return a.path.localeCompare(b.path);
+    });
+
+  return userFiles
+    .map((file) => {
+      const relativePath = file.path.slice(`/${username}/`.length);
+      const isFolder = file.type === "folder";
+      const icon = isFolder ? "fas fa-folder" : "fas fa-file";
+      const iconColor = isFolder ? "text-yellow-500" : "text-blue-500";
+
+      return `
+      <label class="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0">
+        <input type="checkbox" 
+               class="resource-checkbox mr-3 text-blue-600" 
+               data-path="${relativePath}"
+               onchange="toggleResource(this, '${relativePath}')">
+        <i class="${icon} ${iconColor} mr-3"></i>
+        <div class="flex-1">
+          <span class="text-gray-900">${relativePath}</span>
+          <div class="text-xs text-gray-500">
+            ${isFolder ? "Folder" : `File • ${file.size} bytes`}
+          </div>
+        </div>
+      </label>
+    `;
+    })
+    .join("");
+}
+
+function getPermissionIcon(action: string): string {
+  switch (action) {
+    case "read":
+      return "fas fa-eye";
+    case "write":
+      return "fas fa-edit";
+    case "append":
+      return "fas fa-plus";
+    default:
+      return "fas fa-key";
+  }
+}
+
+function getPermissionBadgeColor(action: string): string {
+  switch (action) {
+    case "read":
+      return "bg-blue-600";
+    case "write":
+      return "bg-red-600";
+    case "append":
+      return "bg-green-600";
+    default:
+      return "bg-gray-600";
+  }
 }
 
 async function handleConsent(
@@ -589,7 +1080,8 @@ async function handleConsent(
   const clientId = formData.get("client_id") as string;
   const redirectUri = formData.get("redirect_uri") as string;
   const state = formData.get("state") as string;
-  const scopes = (formData.get("scopes") as string).split(" ");
+  const originalScopes = (formData.get("original_scopes") as string).split(" ");
+  const selectedResourcesJson = formData.get("selected_resources") as string;
   const resource = formData.get("resource") as string;
   const userId = formData.get("user_id") as string;
 
@@ -605,10 +1097,52 @@ async function handleConsent(
     });
   }
 
+  // Parse selected resources for variable scopes
+  let selectedResources: string[] = [];
+  if (selectedResourcesJson) {
+    try {
+      selectedResources = JSON.parse(selectedResourcesJson);
+    } catch (e) {
+      selectedResources = [];
+    }
+  }
+
+  // Build final scopes list
+  const finalScopes: string[] = [];
+
+  for (const scope of originalScopes) {
+    if (scope.includes(":{resource}") || scope.includes(":{*}")) {
+      // Variable scope - expand to all selected resources
+      const action = scope.split(":")[0];
+      if (selectedResources.length === 0) {
+        // No resources selected, return error
+        redirectUrl.searchParams.set("error", "invalid_request");
+        redirectUrl.searchParams.set(
+          "error_description",
+          "No resources selected for variable scopes"
+        );
+        if (state) redirectUrl.searchParams.set("state", state);
+
+        return new Response(null, {
+          status: 302,
+          headers: { ...getCorsHeaders(), Location: redirectUrl.toString() },
+        });
+      }
+
+      // Add scope for each selected resource
+      for (const selectedResource of selectedResources) {
+        finalScopes.push(`${action}:${selectedResource}`);
+      }
+    } else {
+      // Specific scope - keep as is
+      finalScopes.push(scope);
+    }
+  }
+
   // User approved, create auth code
   const authCode = generateCodeVerifier();
   const userDO = env.UserDO.get(
-    env.UserDO.idFromName(`${USER_DO_PREFIX}${userId}`)
+    env.UserDO.idFromName(`${USER_DO_PREFIX}code:${authCode}`)
   );
 
   await userDO.setAuthData(authCode, {
@@ -616,7 +1150,7 @@ async function handleConsent(
     clientId,
     redirectUri,
     resource,
-    scopes,
+    scopes: finalScopes, // Use the expanded scopes
   });
 
   redirectUrl.searchParams.set("code", authCode);
@@ -626,6 +1160,31 @@ async function handleConsent(
     status: 302,
     headers: { ...getCorsHeaders(), Location: redirectUrl.toString() },
   });
+}
+
+function validateScopes(scopes: string[]): boolean {
+  const validActions = ["read", "write", "append"];
+
+  for (const scope of scopes) {
+    if (!scope.includes(":")) {
+      // Plain scope like "read", "write", "append" - valid for all resources
+      if (!validActions.includes(scope)) return false;
+    } else {
+      const [action, resource] = scope.split(":", 2);
+      if (!validActions.includes(action)) return false;
+
+      // Allow variable scopes like "read:{resource}"
+      if (resource === "{resource}" || resource === "{*}") {
+        continue; // Valid variable scope
+      }
+
+      // Validate specific resource path
+      if (!resource || resource.startsWith("/") || resource.includes(".."))
+        return false;
+    }
+  }
+
+  return true;
 }
 
 async function handleToken(
@@ -780,25 +1339,6 @@ async function handleMe(
   }
 }
 
-// Utility functions
-function validateScopes(scopes: string[]): boolean {
-  const validActions = ["read", "write", "append"];
-
-  for (const scope of scopes) {
-    if (!scope.includes(":")) {
-      // Plain scope like "read", "write", "append" - valid for all resources
-      if (!validActions.includes(scope)) return false;
-    } else {
-      const [action, resource] = scope.split(":", 2);
-      if (!validActions.includes(action)) return false;
-      if (!resource || resource.startsWith("/") || resource.includes(".."))
-        return false;
-    }
-  }
-
-  return true;
-}
-
 function getScopeDescription(action: string, resource?: string): string {
   const resourceStr = resource || "all your files";
   switch (action) {
@@ -854,6 +1394,16 @@ async function generateCodeChallenge(verifier: string): Promise<string> {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=/g, "");
+}
+
+function isLocalhost(request: Request): boolean {
+  const url = new URL(request.url);
+  return (
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    request.headers.get("cf-connecting-ip") === "::1" ||
+    request.headers.get("cf-connecting-ip") === "127.0.0.1"
+  );
 }
 
 async function encrypt(text: string, secret: string): Promise<string> {
@@ -943,6 +1493,352 @@ async function decrypt(encrypted: string, secret: string): Promise<string> {
   return decoder.decode(decrypted);
 }
 
+function getDemoHTML(origin: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OAuth Demo</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-4xl mx-auto">
+            <!-- Header -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">
+                    <i class="fas fa-shield-alt text-blue-600 mr-3"></i>
+                    OAuth 2.0 Demo
+                </h1>
+                <p class="text-gray-600">Test the OAuth flow with different scope configurations</p>
+            </div>
+
+            <!-- Demo Scenarios -->
+            <div class="grid md:grid-cols-2 gap-6 mb-8">
+                <!-- Variable Scopes Demo -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h2 class="text-xl font-semibold text-gray-900 mb-4">
+                        <i class="fas fa-sliders-h text-blue-600 mr-2"></i>
+                        Variable Scopes
+                    </h2>
+                    <p class="text-gray-600 mb-4">Request permissions that let the user choose specific resources</p>
+                    
+                    <div class="space-y-3 mb-6">
+                        <div class="flex items-center space-x-2">
+                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                <i class="fas fa-eye mr-1"></i>READ
+                            </span>
+                            <span class="text-gray-700">read:{resource}</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">
+                                <i class="fas fa-edit mr-1"></i>WRITE
+                            </span>
+                            <span class="text-gray-700">write:{resource}</span>
+                        </div>
+                    </div>
+                    
+                    <button onclick="startVariableFlow()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-play mr-2"></i>
+                        Start Variable Scope Flow
+                    </button>
+                </div>
+
+                <!-- Specific Scopes Demo -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h2 class="text-xl font-semibold text-gray-900 mb-4">
+                        <i class="fas fa-file-alt text-green-600 mr-2"></i>
+                        Specific Scopes
+                    </h2>
+                    <p class="text-gray-600 mb-4">Request permissions for specific files (existing and non-existing)</p>
+                    
+                    <div class="space-y-3 mb-6">
+                        <div class="flex items-center space-x-2">
+                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                <i class="fas fa-eye mr-1"></i>READ
+                            </span>
+                            <span class="text-gray-700">documents/readme.md</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">
+                                <i class="fas fa-edit mr-1"></i>WRITE
+                            </span>
+                            <span class="text-gray-700">config/settings.json</span>
+                        </div>
+                    </div>
+                    
+                    <button onclick="startSpecificFlow()" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200">
+                        <i class="fas fa-play mr-2"></i>
+                        Start Specific Scope Flow
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mixed Demo -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">
+                    <i class="fas fa-mix text-purple-600 mr-2"></i>
+                    Mixed Scopes Demo
+                </h2>
+                <p class="text-gray-600 mb-4">Combine variable and specific scopes in one request</p>
+                
+                <div class="grid md:grid-cols-2 gap-4 mb-6">
+                    <div>
+                        <h4 class="font-semibold text-gray-900 mb-2">Variable Scopes:</h4>
+                        <div class="space-y-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                                    <i class="fas fa-plus mr-1"></i>APPEND
+                                </span>
+                                <span class="text-gray-700">append:{resource}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-900 mb-2">Specific Scopes:</h4>
+                        <div class="space-y-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                    <i class="fas fa-eye mr-1"></i>READ
+                                </span>
+                                <span class="text-gray-700">logs/app.log</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button onclick="startMixedFlow()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200">
+                    <i class="fas fa-play mr-2"></i>
+                    Start Mixed Scope Flow
+                </button>
+            </div>
+
+            <!-- Results -->
+            <div id="results" class="bg-white rounded-lg shadow-md p-6" style="display: none;">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">
+                    <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                    OAuth Flow Complete
+                </h2>
+                <div id="resultContent" class="space-y-4">
+                    <!-- Results will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CLIENT_ID = '${new URL(origin).hostname}';
+        const REDIRECT_URI = '${origin}/demo.html';
+        
+        function generateCodeVerifier() {
+            const array = new Uint8Array(32);
+            crypto.getRandomValues(array);
+            return btoa(String.fromCharCode.apply(null, Array.from(array)))
+                .replace(/\\+/g, '-')
+                .replace(/\\//g, '_')
+                .replace(/=/g, '');
+        }
+        
+        async function generateCodeChallenge(verifier) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(verifier);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(digest))))
+                .replace(/\\+/g, '-')
+                .replace(/\\//g, '_')
+                .replace(/=/g, '');
+        }
+        
+        async function startOAuthFlow(scopes) {
+            const codeVerifier = generateCodeVerifier();
+            const codeChallenge = await generateCodeChallenge(codeVerifier);
+            const state = generateCodeVerifier();
+            
+            // Store for later use
+            localStorage.setItem('oauth_code_verifier', codeVerifier);
+            localStorage.setItem('oauth_state', state);
+            
+            const authUrl = new URL('${origin}/authorize');
+            authUrl.searchParams.set('response_type', 'code');
+            authUrl.searchParams.set('client_id', CLIENT_ID);
+            authUrl.searchParams.set('redirect_uri', REDIRECT_URI);
+            authUrl.searchParams.set('scope', scopes);
+            authUrl.searchParams.set('state', state);
+            authUrl.searchParams.set('code_challenge', codeChallenge);
+            authUrl.searchParams.set('code_challenge_method', 'S256');
+            
+            window.location.href = authUrl.toString();
+        }
+        
+        function startVariableFlow() {
+            startOAuthFlow('read:{resource} write:{resource}');
+        }
+        
+        function startSpecificFlow() {
+            startOAuthFlow('read:documents/readme.md write:config/settings.json');
+        }
+        
+        function startMixedFlow() {
+            startOAuthFlow('append:{resource} read:logs/app.log');
+        }
+        
+        async function handleCallback() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const state = urlParams.get('state');
+            const error = urlParams.get('error');
+            
+            if (error) {
+                showError('OAuth Error: ' + error);
+                return;
+            }
+            
+            if (!code || !state) {
+                return; // Not a callback
+            }
+            
+            const storedState = localStorage.getItem('oauth_state');
+            const codeVerifier = localStorage.getItem('oauth_code_verifier');
+            
+            if (state !== storedState) {
+                showError('Invalid state parameter');
+                return;
+            }
+            
+            // Exchange code for token
+            try {
+                const tokenResponse = await fetch('${origin}/token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        grant_type: 'authorization_code',
+                        code: code,
+                        client_id: CLIENT_ID,
+                        redirect_uri: REDIRECT_URI,
+                        code_verifier: codeVerifier,
+                        resource: '${origin}'
+                    })
+                });
+                
+                if (!tokenResponse.ok) {
+                    throw new Error('Token exchange failed');
+                }
+                
+                const tokenData = await tokenResponse.json();
+                
+                // Get user info
+                const userResponse = await fetch('${origin}/me', {
+                    headers: {
+                        'Authorization': 'Bearer ' + tokenData.access_token
+                    }
+                });
+                
+                if (!userResponse.ok) {
+                    throw new Error('Failed to get user info');
+                }
+                
+                const userData = await userResponse.json();
+                
+                showResults(tokenData, userData);
+                
+                // Clean up
+                localStorage.removeItem('oauth_code_verifier');
+                localStorage.removeItem('oauth_state');
+                
+                // Clean URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+            } catch (error) {
+                showError('Error completing OAuth flow: ' + error.message);
+            }
+        }
+        
+        function showResults(tokenData, userData) {
+            const resultsDiv = document.getElementById('results');
+            const resultContent = document.getElementById('resultContent');
+            
+            resultContent.innerHTML = \`
+                <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <h3 class="font-semibold text-green-900 mb-2">Access Token Obtained</h3>
+                    <p class="text-sm text-green-800 mb-2">Token Type: \${tokenData.token_type}</p>
+                    <p class="text-sm text-green-800 mb-2">Granted Scopes: \${tokenData.scope}</p>
+                    <div class="bg-green-100 p-2 rounded text-xs font-mono break-all">
+                        \${tokenData.access_token.substring(0, 50)}...
+                    </div>
+                </div>
+                
+                <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h3 class="font-semibold text-blue-900 mb-2">User Information</h3>
+                    <div class="flex items-center space-x-3 mb-3">
+                        <img src="\${userData.profile_image_url || 'https://via.placeholder.com/32'}" 
+                             class="w-8 h-8 rounded-full">
+                        <div>
+                            <p class="font-medium text-blue-900">\${userData.name}</p>
+                            <p class="text-sm text-blue-700">@\${userData.username}</p>
+                        </div>
+                    </div>
+                    <div class="bg-blue-100 p-2 rounded">
+                        <h4 class="font-medium text-blue-900 mb-1">Active Scopes:</h4>
+                        <div class="flex flex-wrap gap-1">
+                            \${userData.scopes.map(scope => \`
+                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-200 text-blue-800">
+                                    \${scope}
+                                </span>
+                            \`).join('')}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <button onclick="location.reload()" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg">
+                        <i class="fas fa-redo mr-2"></i>
+                        Start Over
+                    </button>
+                </div>
+            \`;
+            
+            resultsDiv.style.display = 'block';
+            resultsDiv.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function showError(message) {
+            const resultsDiv = document.getElementById('results');
+            const resultContent = document.getElementById('resultContent');
+            
+            resultContent.innerHTML = \`
+                <div class="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <h3 class="font-semibold text-red-900 mb-2">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        Error
+                    </h3>
+                    <p class="text-red-800">\${message}</p>
+                </div>
+                
+                <div class="text-center">
+                    <button onclick="location.reload()" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg">
+                        <i class="fas fa-redo mr-2"></i>
+                        Try Again
+                    </button>
+                </div>
+            \`;
+            
+            resultsDiv.style.display = 'block';
+            resultsDiv.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // Handle OAuth callback on page load
+        window.addEventListener('DOMContentLoaded', handleCallback);
+    </script>
+</body>
+</html>
+  `;
+}
+
 export interface ResourceUserContext<T = { [key: string]: any }>
   extends ExecutionContext {
   user: XUser | undefined;
@@ -1022,7 +1918,7 @@ export function withResourceAuth<TEnv = {}, TMetadata = { [key: string]: any }>(
         url.origin
       }/authorize?redirect_uri=${encodeURIComponent(request.url)}&client_id=${
         env.SELF_CLIENT_ID
-      }`;
+      }&scope=read:{resource}%20write:{resource}%20append:{resource}`;
 
       return new Response("Authentication required: " + loginUrl, {
         status: 401,
