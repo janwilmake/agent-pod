@@ -1,7 +1,7 @@
 {
   "dependencies": {
-    "queryable-object": "^0.0.21",
-    "simplerauth-client": "^0.0.14"
+    "multistub": "^0.0.8",
+    "queryable-object": "^0.0.21"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250913.0"

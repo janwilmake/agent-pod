@@ -8,7 +8,8 @@ import {
   studioMiddleware,
 } from "queryable-object";
 import { DurableObject } from "cloudflare:workers";
-import { withSimplerAuth } from "simplerauth-client";
+import { UserDO, withResourceAuth } from "./fs-oauth-provider";
+export { UserDO };
 
 const DO_NAME_SUFFIX = ":v1";
 
@@ -878,7 +879,7 @@ Endpoints:
 }
 
 export default {
-  fetch: withSimplerAuth(
+  fetch: withResourceAuth(
     async (request: Request, env: Env, ctx) => {
       const url = new URL(request.url);
 
@@ -891,6 +892,26 @@ export default {
 
       if (request.method === "OPTIONS") {
         return new Response(null, { headers: corsHeaders });
+      }
+
+      const path = url.pathname;
+
+      if (request.method === "GET") {
+        const requiredScope = path === "/" ? "read" : `read:${path.slice(1)}`;
+        if (!ctx.hasScope(requiredScope)) {
+          return new Response("Insufficient permissions", { status: 403 });
+        }
+      } else if (request.method === "PUT") {
+        const requiredScope = `write:${path.slice(1)}`;
+        if (!ctx.hasScope(requiredScope)) {
+          return new Response("Insufficient permissions", { status: 403 });
+        }
+      } else if (request.method === "POST" && path.startsWith("/api/append")) {
+        const targetPath = url.searchParams.get("path");
+        const requiredScope = `append:${targetPath?.slice(1)}`;
+        if (!ctx.hasScope(requiredScope)) {
+          return new Response("Insufficient permissions", { status: 403 });
+        }
       }
 
       const stub = env.TEXT.get(
@@ -929,6 +950,6 @@ export default {
 
       return newResponse;
     },
-    { isLoginRequired: true, scope: "profile" }
+    { isLoginRequired: true }
   ),
 };

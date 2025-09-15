@@ -5,8 +5,14 @@
   "compatibility_date": "2025-09-15",
   "dev": { "port": 3000 },
   "durable_objects": {
-    "bindings": [{ "name": "TEXT", "class_name": "TextDO" }]
+    "bindings": [
+      { "name": "TEXT", "class_name": "TextDO" },
+      { "name": "UserDO", "class_name": "UserDO" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TextDO"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TextDO"] },
+    { "tag": "v2", "new_sqlite_classes": ["UserDO"] }
+  ],
   "routes": [{ "pattern": "server.agent-pod.com", "custom_domain": true }]
 }
