@@ -4,6 +4,8 @@ Headless collaborative file system API with real-time WebSocket support and dire
 
 ![](design.drawio.png)
 
+Demo: https://server.agent-pod.com
+
 # PLAN
 
 1. ✅ Take `xytext` and strip out all front-end (https://letmeprompt.com/rules-httpsuithu-xjgyzz0)
