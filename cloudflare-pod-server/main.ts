@@ -55,6 +55,31 @@ interface FileNode extends Record<string, any> {
   content?: string;
 }
 
+// Helper function to add CORS headers to any response
+function addCorsHeaders(response: Response): Response {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers":
+      "Content-Type, Authorization, x-username, x-api-key",
+    "Access-Control-Max-Age": "0", // 24 hours
+  };
+
+  const headers = new Headers(response.headers);
+
+  Object.entries(corsHeaders).forEach(([key, value]) => {
+    headers.set(key, value);
+  });
+  ``;
+  const newResponse = new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+
+  return newResponse;
+}
+
 @Queryable()
 export class TextDO extends DurableObject {
   private sessions: Map<string, Session> = new Map();
@@ -97,61 +122,78 @@ export class TextDO extends DurableObject {
   }
 
   async fetch(request: Request) {
+    // Handle CORS preflight requests first
+    if (request.method === "OPTIONS") {
+      return addCorsHeaders(new Response(null, { status: 200 }));
+    }
+
     const url = new URL(request.url);
     const path = url.pathname;
     const username = request.headers.get("x-username");
 
-    // Handle API endpoints
-    if (path.startsWith("/api/")) {
-      return this.handleAPIRequest(request, url, username);
-    }
-
-    // Handle llms.txt endpoint
-    if (path === "/llms.txt") {
-      const llmsTxt = this.generateLlmsTxt(username);
-      return new Response(llmsTxt, {
-        headers: { "Content-Type": "text/plain" },
-      });
-    }
-
-    // Handle file deletion
-    if (request.method === "DELETE") {
-      const deleted = this.deleteNode(path);
-      if (deleted) {
-        this.broadcastFileChange(username, "delete", path);
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { "Content-Type": "application/json" },
-        });
-      } else {
-        return new Response(JSON.stringify({ error: "File not found" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
+    try {
+      // Handle API endpoints
+      if (path.startsWith("/api/")) {
+        const response = await this.handleAPIRequest(request, url, username);
+        return addCorsHeaders(response);
       }
-    }
 
-    // Handle file content operations
-    if (request.method === "GET") {
-      return this.handleFileGet(url, username);
-    }
+      // Handle llms.txt endpoint
+      if (path === "/llms.txt") {
+        const llmsTxt = this.generateLlmsTxt(username);
+        return addCorsHeaders(
+          new Response(llmsTxt, {
+            headers: { "Content-Type": "text/plain" },
+          })
+        );
+      }
 
-    if (request.method === "PUT") {
-      const content = await request.text();
-      this.saveContent(path, content);
-      this.broadcastFileChange(username, "update", path, content);
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+      // Handle file deletion
+      if (request.method === "DELETE") {
+        const deleted = this.deleteNode(path);
+        if (deleted) {
+          this.broadcastFileChange(username, "delete", path);
+          return addCorsHeaders(
+            new Response(JSON.stringify({ success: true }), {
+              headers: { "Content-Type": "application/json" },
+            })
+          );
+        } else {
+          return addCorsHeaders(
+            new Response(JSON.stringify({ error: "File not found" }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
+        }
+      }
 
-    // WebSocket handling
-    if (request.headers.get("Upgrade") === "websocket") {
-      return this.handleWebSocket(request, username, path);
-    }
+      // Handle file content operations
+      if (request.method === "GET") {
+        const response = await this.handleFileGet(url, username);
+        return addCorsHeaders(response);
+      }
 
-    // Default API info response
-    return new Response(
-      `FS Pod Server API
+      if (request.method === "PUT") {
+        const content = await request.text();
+        this.saveContent(path, content);
+        this.broadcastFileChange(username, "update", path, content);
+        return addCorsHeaders(
+          new Response(JSON.stringify({ success: true }), {
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+
+      // WebSocket handling - CORS not needed for websockets
+      if (request.headers.get("Upgrade") === "websocket") {
+        return this.handleWebSocket(request, username, path);
+      }
+
+      // Default API info response
+      return addCorsHeaders(
+        new Response(
+          `FS Pod Server API
       
 Endpoints:
 
@@ -162,10 +204,20 @@ Endpoints:
 - admin: /studio
 - SQL api: /query
       `,
-      {
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+          {
+            headers: { "Content-Type": "text/plain" },
+          }
+        )
+      );
+    } catch (error) {
+      console.error("Error in TextDO fetch:", error);
+      return addCorsHeaders(
+        new Response(JSON.stringify({ error: "Internal server error" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    }
   }
 
   private parsePathComponents(path: string): {
@@ -881,36 +933,45 @@ Endpoints:
 export default {
   fetch: withResourceAuth(
     async (request: Request, env: Env, ctx) => {
-      const url = new URL(request.url);
-
-      // Add CORS headers for API usage
-      const corsHeaders = {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      };
-
+      // Handle CORS preflight at the top level
       if (request.method === "OPTIONS") {
-        return new Response(null, { headers: corsHeaders });
+        return new Response(null, {
+          status: 200,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, x-username, x-api-key",
+            "Access-Control-Max-Age": "0",
+          },
+        });
       }
 
+      const url = new URL(request.url);
       const path = url.pathname;
 
+      // Apply permissions checks
       if (request.method === "GET") {
-        const requiredScope = path === "/" ? "read" : `read:${path.slice(1)}`;
+        const requiredScope = path === "/" ? "read:" : `read:${path.slice(1)}`;
         if (!ctx.hasScope(requiredScope)) {
-          return new Response("Insufficient permissions", { status: 403 });
+          return addCorsHeaders(
+            new Response("Insufficient permissions", { status: 403 })
+          );
         }
       } else if (request.method === "PUT") {
         const requiredScope = `write:${path.slice(1)}`;
         if (!ctx.hasScope(requiredScope)) {
-          return new Response("Insufficient permissions", { status: 403 });
+          return addCorsHeaders(
+            new Response("Insufficient permissions", { status: 403 })
+          );
         }
       } else if (request.method === "POST" && path.startsWith("/api/append")) {
         const targetPath = url.searchParams.get("path");
         const requiredScope = `append:${targetPath?.slice(1)}`;
         if (!ctx.hasScope(requiredScope)) {
-          return new Response("Insufficient permissions", { status: 403 });
+          return addCorsHeaders(
+            new Response("Insufficient permissions", { status: 403 })
+          );
         }
       }
 
@@ -920,9 +981,10 @@ export default {
 
       // Handle studio endpoint
       if (url.pathname === "/studio") {
-        return studioMiddleware(request, stub.raw, {
+        const response = await studioMiddleware(request, stub.raw, {
           dangerouslyDisableAuth: true,
         });
+        return addCorsHeaders(response);
       }
 
       // Handle exec endpoint
@@ -930,25 +992,33 @@ export default {
         const query = url.searchParams.get("query");
         const bindings = url.searchParams.getAll("binding");
         const result = await stub.exec(query, ...bindings);
-        return new Response(JSON.stringify(result, undefined, 2), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return addCorsHeaders(
+          new Response(JSON.stringify(result, undefined, 2), {
+            headers: { "Content-Type": "application/json" },
+          })
+        );
       }
 
       // Add username to request headers for the DO
-      const newRequest = new Request(request);
-      newRequest.headers.set("x-username", ctx.user.username);
-
-      const response = await stub.fetch(newRequest);
-
-      // Add CORS headers to all responses
-      const newResponse = new Response(response.body, response);
-
-      Object.entries(corsHeaders).forEach(([key, value]) => {
-        newResponse.headers.set(key, value);
+      const newRequest = new Request(request, {
+        headers: {
+          ...Object.fromEntries(request.headers.entries()),
+          "x-username": ctx.user.username,
+        },
       });
 
-      return newResponse;
+      try {
+        const response = await stub.fetch(newRequest);
+        return addCorsHeaders(response);
+      } catch (error) {
+        console.error("Error calling Durable Object:", error);
+        return addCorsHeaders(
+          new Response(JSON.stringify({ error: "Internal server error" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
     },
     { isLoginRequired: true }
   ),

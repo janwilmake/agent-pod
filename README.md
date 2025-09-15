@@ -16,6 +16,10 @@ There are many questions unanswered, and in this project I aim to link any work 
 
 What im interested in is how we can transition from traditional apps to apps that don't store personal data. Basically, there's already lots of apps online and currently they all own the data. There's no solid pods that have access to all of these. It'd be great if we could design a system that has a general way to syncing your data from any platform that has any API, into your own solid POD. Think: GitHub, X, google drive, etc. now we can keep using these services but all data also ends up in the solid pod. now, it becomes possible to create solid-first apps because the data is already there.
 
+# Design Decisions
+
+1. The SOLID spec suggests using [Solid-OIDC](https://solidproject.org/TR/oidc) and either [WAC](https://solidproject.org/TR/wac) or [ACP](https://solidproject.org/TR/acp). Since these are lesser known specifications and since I'm convinced it can also be done with OAuth which has much wider adoption, the current SOLID server implementations don't implement this yet. We may add this at a later stage.
+
 # Experiments
 
 **Ergonomical Data Capture**
@@ -29,12 +33,14 @@ What im interested in is how we can transition from traditional apps to apps tha
 
 Large Platforms like X, Facebook, and GitHub create data siloes and take ownership of your data, yet seem to remain popular. There needs to be a way to easily access all data from all these apps in one place.
 
-- [markdownfeed](markdownfeed/) - X timeline data sync
+Coming Soon!
+
+<!-- - [markdownfeed](markdownfeed/) - X timeline data sync -->
 
 **POD Servers**
 
 - [xytext](xytext/) - Early prototype of a 'POD server' that uses X OAuth for authentication and a minimal monaco-based interface for file editing. Needs to move to MCP-compatible oauth, and needs to offer a SOLID-like API that allows apps to easily read and write data to it.
-- [fs-pod-server](fs-pod-server/) - minimal FS POD server with MCP-compatible OAuth. Will work towards a well-scoped OAuth provider here.
+- [cloudflare-pod-server](cloudflare-pod-server/) - Minimal FS POD server with MCP-compatible OAuth. Will work towards a well-scoped OAuth provider here.
 
 # Let's make this real
 

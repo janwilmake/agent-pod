@@ -809,13 +809,18 @@ async function showConsentPage(
                         <div class="border border-gray-200 rounded-lg">
                             <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
                                 <div class="flex items-center justify-between">
-                                    <span class="font-medium text-gray-900">Your Files</span>
-                                    <button type="button" onclick="toggleSelectAll()" id="selectAllBtn" class="text-blue-600 hover:text-blue-800 text-sm">
-                                        Select All
-                                    </button>
+                                    <span class="font-medium text-gray-900">Your Files & Folders</span>
+                                    <div class="flex items-center space-x-3">
+                                        <button type="button" onclick="toggleSelectAll()" id="selectAllBtn" class="text-blue-600 hover:text-blue-800 text-sm">
+                                            Select All
+                                        </button>
+                                        <button type="button" onclick="clearSelection()" class="text-gray-600 hover:text-gray-800 text-sm">
+                                            Clear All
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="max-h-64 overflow-y-auto">
+                            <div class="max-h-80 overflow-y-auto">
                                 ${generateFileTree(userFiles, user.username)}
                             </div>
                         </div>
@@ -826,6 +831,7 @@ async function showConsentPage(
                                 <div>
                                     <p class="text-sm text-yellow-800">
                                         <strong>Note:</strong> You must select at least one resource to continue.
+                                        You can grant access to existing files/folders or create new ones.
                                     </p>
                                 </div>
                             </div>
@@ -876,8 +882,8 @@ async function showConsentPage(
                                             ? `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                                <i class="fas fa-check mr-1"></i>Exists
                                              </span>`
-                                            : `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                               <i class="fas fa-times mr-1"></i>Not Found
+                                            : `<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                               <i class="fas fa-plus mr-1"></i>Will be created
                                              </span>`
                                         }
                                     </div>
@@ -920,6 +926,7 @@ async function showConsentPage(
 
     <script>
         let selectedResources = new Set();
+        let newResources = new Set();
         
         function toggleResource(checkbox, path) {
             if (checkbox.checked) {
@@ -930,6 +937,62 @@ async function showConsentPage(
             updateSelectedResources();
             updateApproveButton();
             updateSelectAllButton();
+        }
+        
+        function addNewResource() {
+            const input = document.getElementById('newResourcePath');
+            const path = input.value.trim();
+            
+            if (!path) {
+                alert('Please enter a resource path');
+                return;
+            }
+            
+            // Validate path format
+            if (path.startsWith('/') || path.includes('..')) {
+                alert('Invalid path format. Use relative paths without leading slashes or parent directory references.');
+                return;
+            }
+            
+            if (selectedResources.has(path) || newResources.has(path)) {
+                alert('This resource is already selected');
+                return;
+            }
+            
+            // Add to selected resources
+            selectedResources.add(path);
+            newResources.add(path);
+            
+            // Add to visual list
+            const newResourcesList = document.getElementById('newResourcesList');
+            const resourceDiv = document.createElement('div');
+            resourceDiv.className = 'flex items-center justify-between p-2 bg-green-50 border border-green-200 rounded text-sm';
+            resourceDiv.innerHTML = \`
+                <div class="flex items-center">
+                    <i class="fas fa-plus text-green-600 mr-2"></i>
+                    <span class="font-medium text-green-800">\${path}</span>
+                    <span class="text-green-600 text-xs ml-2">(new)</span>
+                </div>
+                <button type="button" onclick="removeNewResource('\${path}', this.parentElement)" class="text-red-600 hover:text-red-800">
+                    <i class="fas fa-times"></i>
+                </button>
+            \`;
+            newResourcesList.appendChild(resourceDiv);
+            
+            // Clear input
+            input.value = '';
+            
+            // Update form state
+            updateSelectedResources();
+            updateApproveButton();
+        }
+        
+        function removeNewResource(path, element) {
+            selectedResources.delete(path);
+            newResources.delete(path);
+            element.remove();
+            updateSelectedResources();
+            updateApproveButton();
         }
         
         function toggleSelectAll() {
@@ -945,6 +1008,26 @@ async function showConsentPage(
                     selectedResources.delete(path);
                 }
             });
+            
+            updateSelectedResources();
+            updateApproveButton();
+            updateSelectAllButton();
+        }
+        
+        function clearSelection() {
+            // Clear all checkboxes
+            const checkboxes = document.querySelectorAll('.resource-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = false;
+                const path = cb.getAttribute('data-path');
+                selectedResources.delete(path);
+            });
+            
+            // Clear new resources
+            const newResourcesList = document.getElementById('newResourcesList');
+            newResourcesList.innerHTML = '';
+            newResources.clear();
+            selectedResources.clear();
             
             updateSelectedResources();
             updateApproveButton();
@@ -973,6 +1056,14 @@ async function showConsentPage(
                 selectAllBtn.textContent = allSelected ? 'Deselect All' : 'Select All';
             }
         }
+        
+        // Handle Enter key in the new resource input
+        document.getElementById('newResourcePath').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addNewResource();
+            }
+        });
     </script>
 </body>
 </html>`;
@@ -983,17 +1074,24 @@ async function showConsentPage(
 }
 
 function generateFileTree(files: FileNode[], username: string): string {
-  if (files.length === 0) {
-    return `
-      <div class="p-8 text-center text-gray-500">
-        <i class="fas fa-folder-open text-4xl mb-4"></i>
-        <p>No files found</p>
-        <p class="text-sm">Create some files first to grant access</p>
+  // Always include root directory option
+  let html = `
+    <label class="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
+      <input type="checkbox" 
+             class="resource-checkbox mr-3 text-blue-600" 
+             data-path=""
+             onchange="toggleResource(this, '')">
+      <i class="fas fa-folder text-yellow-500 mr-3"></i>
+      <div class="flex-1">
+        <span class="text-gray-900 font-semibold">/ (Root Directory)</span>
+        <div class="text-xs text-gray-500">
+          All files and folders
+        </div>
       </div>
-    `;
-  }
+    </label>
+  `;
 
-  // Filter files to only show user's files and sort them
+  // Add existing files and folders
   const userFiles = files
     .filter((f) => f.path.startsWith(`/${username}/`))
     .sort((a, b) => {
@@ -1004,15 +1102,14 @@ function generateFileTree(files: FileNode[], username: string): string {
       return a.path.localeCompare(b.path);
     });
 
-  return userFiles
-    .map((file) => {
-      const relativePath = file.path.slice(`/${username}/`.length);
-      const isFolder = file.type === "folder";
-      const icon = isFolder ? "fas fa-folder" : "fas fa-file";
-      const iconColor = isFolder ? "text-yellow-500" : "text-blue-500";
+  userFiles.forEach((file) => {
+    const relativePath = file.path.slice(`/${username}/`.length);
+    const isFolder = file.type === "folder";
+    const icon = isFolder ? "fas fa-folder" : "fas fa-file";
+    const iconColor = isFolder ? "text-yellow-500" : "text-blue-500";
 
-      return `
-      <label class="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0">
+    html += `
+      <label class="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
         <input type="checkbox" 
                class="resource-checkbox mr-3 text-blue-600" 
                data-path="${relativePath}"
@@ -1026,8 +1123,51 @@ function generateFileTree(files: FileNode[], username: string): string {
         </div>
       </label>
     `;
-    })
-    .join("");
+  });
+
+  // Add section for creating new resources
+  html += `
+    <div class="bg-gray-50 border-t border-gray-200">
+      <div class="p-3">
+        <h4 class="text-sm font-semibold text-gray-700 mb-3">
+          <i class="fas fa-plus text-green-600 mr-2"></i>
+          Grant access to new resources
+        </h4>
+        
+        <div class="space-y-2">
+          <div class="flex items-center space-x-2">
+            <input type="text" 
+                   id="newResourcePath" 
+                   placeholder="e.g., documents/notes.txt or projects/"
+                   class="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <button type="button" 
+                    onclick="addNewResource()" 
+                    class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              Add
+            </button>
+          </div>
+          <p class="text-xs text-gray-600">
+            Add files (with extension) or folders (ending with /) that don't exist yet
+          </p>
+        </div>
+        
+        <!-- Dynamic list of added new resources -->
+        <div id="newResourcesList" class="mt-3 space-y-1"></div>
+      </div>
+    </div>
+  `;
+
+  if (userFiles.length === 0) {
+    html += `
+      <div class="p-4 text-center text-gray-500 border-t border-gray-200">
+        <i class="fas fa-info-circle text-blue-500 mb-2"></i>
+        <p class="text-sm">No existing files found</p>
+        <p class="text-xs">You can still grant access to the root directory or add new resources above</p>
+      </div>
+    `;
+  }
+
+  return html;
 }
 
 function getPermissionIcon(action: string): string {
@@ -1348,13 +1488,16 @@ function getScopeDescription(action: string, resource?: string): string {
 
 function getAccessToken(request: Request): string | null {
   const authHeader = request.headers.get("Authorization");
+
   if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.substring(7);
+    const token = authHeader.substring(7);
+    return token;
   }
 
   // Fallback to cookie
   const cookies = parseCookies(request.headers.get("Cookie") || "");
-  return cookies.access_token || null;
+  const cookieToken = cookies.access_token || null;
+  return cookieToken;
 }
 
 function parseCookies(cookieHeader: string): Record<string, string> {
@@ -1518,6 +1661,20 @@ export function withResourceAuth<TEnv = {}, TMetadata = { [key: string]: any }>(
     const oauth = await handleResourceOAuth(request, env, ctx);
     if (oauth) return oauth;
 
+    // Handle CORS preflight at the top level
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 200,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers":
+            "Content-Type, Authorization, x-username, x-api-key",
+          "Access-Control-Max-Age": "0",
+        },
+      });
+    }
+
     let user: XUser | undefined = undefined;
     let scopes: string[] = [];
     const accessToken = getAccessToken(request);
@@ -1536,7 +1693,6 @@ export function withResourceAuth<TEnv = {}, TMetadata = { [key: string]: any }>(
           env.UserDO.idFromName(`${USER_DO_PREFIX}${userId}`)
         );
         const loginData = await userDO.getResourceLogin(accessToken);
-
         if (loginData) {
           user = loginData.user;
           scopes = loginData.scopes;
@@ -1546,14 +1702,64 @@ export function withResourceAuth<TEnv = {}, TMetadata = { [key: string]: any }>(
       }
     }
 
-    const hasScope = (requiredScope: string) => {
-      // Check exact match or wildcard match
+    const hasScope = (requiredScope: string): boolean => {
+      // Check for exact match first
       if (scopes.includes(requiredScope)) return true;
 
-      // Check if user has broader scope (e.g., "write" includes "write:specific")
+      // Parse the required scope
+      const [requiredAction, requiredResource = ""] = requiredScope.split(
+        ":",
+        2
+      );
+
+      // Check each granted scope
+      for (const grantedScope of scopes) {
+        const [grantedAction, grantedResource = ""] = grantedScope.split(
+          ":",
+          2
+        );
+
+        // Action must match
+        if (grantedAction !== requiredAction) continue;
+
+        // If granted scope has no resource specified (e.g., "read:", "write:"),
+        // it grants access to everything for that action
+        if (grantedResource === "") return true;
+
+        // If required scope has no resource specified, check if we have the plain action
+        if (requiredResource === "") {
+          if (scopes.includes(requiredAction)) return true;
+          continue;
+        }
+
+        // Check if granted resource is a parent path of required resource
+        // Examples:
+        // - granted "read:documents" allows "read:documents/file.txt"
+        // - granted "write:" allows "write:any/path"
+        // - granted "read:docs/" allows "read:docs/sub/file.txt"
+
+        if (requiredResource.startsWith(grantedResource)) {
+          // Exact match or granted resource is empty (root access)
+          if (grantedResource === "" || requiredResource === grantedResource) {
+            return true;
+          }
+
+          // Check if granted resource is a proper parent directory
+          // Either it ends with '/' or the next character in required is '/'
+          const nextChar = requiredResource.charAt(grantedResource.length);
+          if (
+            grantedResource.endsWith("/") ||
+            nextChar === "/" ||
+            nextChar === ""
+          ) {
+            return true;
+          }
+        }
+      }
+
+      // Check if user has the plain action scope (backward compatibility)
       if (requiredScope.includes(":")) {
-        const [action] = requiredScope.split(":");
-        return scopes.includes(action);
+        return scopes.includes(requiredAction);
       }
 
       return false;
@@ -1569,7 +1775,7 @@ export function withResourceAuth<TEnv = {}, TMetadata = { [key: string]: any }>(
 
       return new Response("Authentication required: " + loginUrl, {
         status: 401,
-        headers: { Location: loginUrl },
+        headers: { ...getCorsHeaders(), Location: loginUrl },
       });
     }
 

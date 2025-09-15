@@ -1,0 +1,8 @@
+{
+  "$schema": "https://unpkg.com/wrangler@latest/config-schema.json",
+  "name": "fs-pod-explorer",
+  "compatibility_date": "2025-09-15",
+  "dev": { "port": 3000 },
+  "assets": { "directory": "./" },
+  "routes": [{ "pattern": "explorer.agent-pod.com", "custom_domain": true }]
+}
