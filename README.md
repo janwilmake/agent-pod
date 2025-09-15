@@ -34,9 +34,8 @@ Large Platforms like X, Facebook, and GitHub create data siloes and take ownersh
 **POD Servers**
 
 - [xytext](xytext/) - Early prototype of a 'POD server' that uses X OAuth for authentication and a minimal monaco-based interface for file editing. Needs to move to MCP-compatible oauth, and needs to offer a SOLID-like API that allows apps to easily read and write data to it.
+- [fs-pod-server](fs-pod-server/) - minimal FS POD server with MCP-compatible OAuth. Will work towards a well-scoped OAuth provider here.
 
 # Let's make this real
 
 Let me know if you want to be involved!
-
-## next steps
