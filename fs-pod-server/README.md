@@ -26,3 +26,4 @@ This now opens the door for doing much more because it allows easily making web-
 # Questions
 
 - Use a local user filesystem for this, or is Cloudflare's addressable DO better (POD = always online, infinitely scalable)?
+  - most peoople use AI from phone, no always on desktop
