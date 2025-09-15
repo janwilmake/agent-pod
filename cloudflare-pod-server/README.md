@@ -28,6 +28,7 @@ OpenAPI spec: https://server.agent-pod.com/openapi.yaml
   - Build a fs MCP
   - build a web-based terminal for it
   - build a fs sync for MacOS so I can keep using browser fs functionality like downloading and selecting files: https://letmeprompt.com/in-which-ways-do-b-3xdzoa0
+  - refactor [efficient-recorder](../efficient-recorder/) and [ip-camera-to-s3-macos](../ip-camera-to-s3-macos/) so it oauths into this FS.
 - See how this differs from https://solidproject.org/TR/protocol and if its worth refactoring it towards it - https://letmeprompt.com/rules-httpsuithu-wknp8p0
 - Add binary file storage by connecting an R2 bucket with username prefix. The node can just have the URL inthere and have `type:binary`, and fetching this can be handled before responding.
 - Consider granting read/write scope by default to `clients/{client_id}/*`, reserving this space for any client.
