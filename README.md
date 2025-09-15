@@ -22,7 +22,19 @@ What im interested in is how we can transition from traditional apps to apps tha
 
 # Experiments
 
+**POD Servers**
+
+- [xytext](xytext/) - Early prototype of a 'POD server' that uses X OAuth for authentication and a minimal monaco-based interface for file editing. Needs to move to MCP-compatible oauth, and needs to offer a SOLID-like API that allows apps to easily read and write data to it.
+- [cloudflare-pod-server](cloudflare-pod-server/) - Minimal FS POD server with MCP-compatible OAuth. Work in progress.
+
+**POD Apps**
+
+- [server demo](https://server.agent-pod.com/demo) - shows oauth
+- [demo-explorer](demo-explorer/) - shows simple explorer after logging in (WIP)
+
 **Ergonomical Data Capture**
+
+These clients don't use the POD yet, but can later be refactored to do so.
 
 - [efficient-recorder](efficient-recorder/) ([thread](https://news.ycombinator.com/item?id=42596607)) - the original contents of this repo, goal: Create the most **battery-life friendly** recorder to stream video/screen/mic/system-audio to any **S3-compatible** cloud-storage-service of choice, open source.
 - [ip-camera-to-s3-macos](ip-camera-to-s3-macos/) - Battery-efficient RTSP video capture and S3 upload utility optimized for macOS (Apple Silicon)
@@ -36,11 +48,6 @@ Large Platforms like X, Facebook, and GitHub create data siloes and take ownersh
 Coming Soon!
 
 <!-- - [markdownfeed](markdownfeed/) - X timeline data sync -->
-
-**POD Servers**
-
-- [xytext](xytext/) - Early prototype of a 'POD server' that uses X OAuth for authentication and a minimal monaco-based interface for file editing. Needs to move to MCP-compatible oauth, and needs to offer a SOLID-like API that allows apps to easily read and write data to it.
-- [cloudflare-pod-server](cloudflare-pod-server/) - Minimal FS POD server with MCP-compatible OAuth. Will work towards a well-scoped OAuth provider here.
 
 # Let's make this real
 
