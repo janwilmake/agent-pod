@@ -1,0 +1,976 @@
+openapi: 3.0.3
+info:
+  title: Agent Pod File System API
+  description: |
+    A file system API with OAuth 2.0 authorization that allows clients to access user files with granular permissions.
+
+    ## Authentication Flow
+
+    This API uses OAuth 2.0 with PKCE for authentication. The unique feature is that the **hostname** of your application serves as the `client_id`.
+
+    ### Quick Start
+
+    1. **Register your client** (optional - dynamic registration supported)
+    2. **Redirect user to authorization endpoint** with your hostname as `client_id`
+    3. **User grants permissions** for specific files/folders
+    4. **Exchange authorization code** for access token
+    5. **Access files** using the Bearer token
+
+    ### Scopes
+
+    - `read` - Read access to all files
+    - `write` - Write access to all files  
+    - `append` - Append access to all files
+    - `read:path/to/file` - Read access to specific file
+    - `write:path/to/file` - Write access to specific file
+    - `append:path/to/file` - Append access to specific file
+    - `read:{resource}` - Variable scope (user selects resources)
+    - `write:{resource}` - Variable scope (user selects resources)
+    - `append:{resource}` - Variable scope (user selects resources)
+
+    ### Example Authorization URL
+    ```
+    https://server.agent-pod.com/authorize?response_type=code&client_id=myapp.example.com&redirect_uri=https://myapp.example.com/callback&scope=read:{resource} write:{resource}&code_challenge=ABC123&code_challenge_method=S256
+    ```
+
+  version: 1.0.0
+  contact:
+    name: Agent Pod Support
+    url: https://server.agent-pod.com
+  license:
+    name: MIT
+servers:
+  - url: https://server.agent-pod.com
+    description: Production server
+
+paths:
+  /.well-known/oauth-authorization-server:
+    get:
+      summary: OAuth 2.0 Authorization Server Metadata
+      description: Returns OAuth 2.0 authorization server metadata as per RFC 8414
+      responses:
+        "200":
+          description: Authorization server metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issuer:
+                    type: string
+                    example: "https://server.agent-pod.com"
+                  authorization_endpoint:
+                    type: string
+                    example: "https://server.agent-pod.com/authorize"
+                  token_endpoint:
+                    type: string
+                    example: "https://server.agent-pod.com/token"
+                  registration_endpoint:
+                    type: string
+                    example: "https://server.agent-pod.com/register"
+                  response_types_supported:
+                    type: array
+                    items:
+                      type: string
+                    example: ["code"]
+                  grant_types_supported:
+                    type: array
+                    items:
+                      type: string
+                    example: ["authorization_code"]
+                  code_challenge_methods_supported:
+                    type: array
+                    items:
+                      type: string
+                    example: ["S256"]
+                  scopes_supported:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                      [
+                        "read:{resource}",
+                        "write:{resource}",
+                        "append:{resource}",
+                      ]
+
+  /.well-known/oauth-protected-resource:
+    get:
+      summary: OAuth 2.0 Protected Resource Metadata
+      description: Returns OAuth 2.0 protected resource metadata as per RFC 8707
+      responses:
+        "200":
+          description: Protected resource metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resource:
+                    type: string
+                    example: "https://server.agent-pod.com"
+                  authorization_servers:
+                    type: array
+                    items:
+                      type: string
+                    example: ["https://server.agent-pod.com"]
+                  scopes_supported:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                      [
+                        "read:{resource}",
+                        "write:{resource}",
+                        "append:{resource}",
+                      ]
+                  bearer_methods_supported:
+                    type: array
+                    items:
+                      type: string
+                    example: ["header"]
+
+  /register:
+    post:
+      summary: Dynamic Client Registration
+      description: |
+        Register a new OAuth client using dynamic registration (RFC 7591).
+        The `client_id` will be set to the hostname from your redirect URIs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - redirect_uris
+              properties:
+                redirect_uris:
+                  type: array
+                  items:
+                    type: string
+                    format: uri
+                  description: All URIs must have the same hostname which becomes your client_id
+                  example:
+                    [
+                      "https://myapp.example.com/callback",
+                      "https://myapp.example.com/oauth",
+                    ]
+      responses:
+        "201":
+          description: Client registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client_id:
+                    type: string
+                    description: The hostname from your redirect URIs
+                    example: "myapp.example.com"
+                  redirect_uris:
+                    type: array
+                    items:
+                      type: string
+                    example: ["https://myapp.example.com/callback"]
+                  token_endpoint_auth_method:
+                    type: string
+                    example: "none"
+                  grant_types:
+                    type: array
+                    items:
+                      type: string
+                    example: ["authorization_code"]
+                  response_types:
+                    type: array
+                    items:
+                      type: string
+                    example: ["code"]
+        "400":
+          description: Invalid client metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /authorize:
+    get:
+      summary: OAuth 2.0 Authorization Endpoint
+      description: |
+        Initiates the OAuth 2.0 authorization flow. User will be redirected to login if not authenticated,
+        then presented with a consent screen to grant permissions.
+
+        **Important**: Use your application's hostname as the `client_id`.
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code]
+          description: Must be "code"
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Your application's hostname (e.g., "myapp.example.com")
+          example: "myapp.example.com"
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Where to redirect after authorization
+          example: "https://myapp.example.com/callback"
+        - name: scope
+          in: query
+          schema:
+            type: string
+          description: Space-separated list of requested scopes
+          example: "read:{resource} write:{resource}"
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: CSRF protection parameter
+        - name: code_challenge
+          in: query
+          required: true
+          schema:
+            type: string
+          description: PKCE code challenge
+        - name: code_challenge_method
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [S256]
+          description: Must be "S256"
+        - name: resource
+          in: query
+          schema:
+            type: string
+          description: Target resource server (optional)
+      responses:
+        "302":
+          description: Redirect to X provider or consent page
+        "400":
+          description: Invalid request parameters
+
+  /token:
+    post:
+      summary: OAuth 2.0 Token Endpoint
+      description: Exchange authorization code for access token
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - grant_type
+                - code
+                - client_id
+                - redirect_uri
+                - code_verifier
+              properties:
+                grant_type:
+                  type: string
+                  enum: [authorization_code]
+                code:
+                  type: string
+                  description: Authorization code from /authorize
+                client_id:
+                  type: string
+                  description: Your application's hostname
+                  example: "myapp.example.com"
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: Same redirect_uri used in /authorize
+                code_verifier:
+                  type: string
+                  description: PKCE code verifier
+                resource:
+                  type: string
+                  description: Target resource server
+                  example: "https://server.agent-pod.com"
+      responses:
+        "200":
+          description: Access token issued successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: Bearer access token
+                    example: "resource_ABC123..."
+                  token_type:
+                    type: string
+                    example: "bearer"
+                  scope:
+                    type: string
+                    description: Space-separated granted scopes
+                    example: "read:documents/readme.md write:config/app.json"
+        "400":
+          description: Invalid token request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /me:
+    get:
+      summary: Get Current User Info
+      description: Returns information about the authenticated user and their granted scopes
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: User information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: User's unique ID
+                  name:
+                    type: string
+                    description: User's display name
+                    example: "John Doe"
+                  username:
+                    type: string
+                    description: User's username
+                    example: "johndoe"
+                  profile_image_url:
+                    type: string
+                    format: uri
+                    description: URL to user's profile image
+                  verified:
+                    type: boolean
+                    description: Whether user is verified
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+                    description: List of granted scopes
+                    example:
+                      ["read:documents/readme.md", "write:config/app.json"]
+        "401":
+          description: Invalid or missing access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /:
+    get:
+      summary: List User Files
+      description: Returns a list of all files belonging to the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: File listing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                    example: "johndoe"
+                  files:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FileInfo"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions (need 'read' scope)
+
+  /{path}:
+    get:
+      summary: Get File or Folder
+      description: |
+        Retrieve file content or folder contents. Requires appropriate read permissions.
+        - For files: returns file content and metadata
+        - For folders: returns list of children
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File or folder path (without leading slash for user files)
+          example: "documents/readme.md"
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: File content or folder listing
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/FileContent"
+                  - $ref: "#/components/schemas/FolderContent"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: File not found
+
+    put:
+      summary: Create or Update File
+      description: Create a new file or update existing file content. Requires write permissions.
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File path (without leading slash for user files)
+          example: "documents/readme.md"
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+              description: File content
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: File updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions (need write scope for this path)
+
+    delete:
+      summary: Delete File or Folder
+      description: Delete a file or folder and all its contents. Requires write permissions.
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File or folder path to delete
+          example: "documents/old-file.md"
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: File deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: File not found
+
+  /api/create-file:
+    post:
+      summary: Create New File
+      description: Create a new file with specified content
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: File path to create
+                  example: "documents/new-file.md"
+                content:
+                  type: string
+                  description: Initial file content
+                  default: ""
+      responses:
+        "200":
+          description: File created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "400":
+          description: File already exists or invalid path
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+
+  /api/create-folder:
+    post:
+      summary: Create New Folder
+      description: Create a new folder
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: Folder path to create
+                  example: "documents/new-folder"
+      responses:
+        "200":
+          description: Folder created successfully
+        "400":
+          description: Folder already exists or invalid path
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+
+  /api/move-node:
+    post:
+      summary: Move File or Folder
+      description: Move a file or folder to a new location
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sourcePath
+                - targetPath
+              properties:
+                sourcePath:
+                  type: string
+                  description: Current path of file/folder
+                  example: "documents/old-location/file.md"
+                targetPath:
+                  type: string
+                  description: New path for file/folder
+                  example: "documents/new-location/file.md"
+      responses:
+        "200":
+          description: File/folder moved successfully
+        "400":
+          description: Invalid paths or target exists
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+
+  /api/copy-node:
+    post:
+      summary: Copy File or Folder
+      description: Copy a file or folder to a new location
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sourcePath
+                - targetPath
+              properties:
+                sourcePath:
+                  type: string
+                  description: Path of file/folder to copy
+                  example: "documents/source-file.md"
+                targetPath:
+                  type: string
+                  description: Destination path for copy
+                  example: "documents/copy-of-file.md"
+      responses:
+        "200":
+          description: File/folder copied successfully
+        "400":
+          description: Invalid paths or target exists
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+
+  /api/rename-node:
+    post:
+      summary: Rename File or Folder
+      description: Rename a file or folder
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+                - newName
+              properties:
+                path:
+                  type: string
+                  description: Current path of file/folder
+                  example: "documents/old-name.md"
+                newName:
+                  type: string
+                  description: New name (just the filename, not full path)
+                  example: "new-name.md"
+      responses:
+        "200":
+          description: File/folder renamed successfully
+        "400":
+          description: Invalid name or name already exists
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+
+  /llms.txt:
+    get:
+      summary: Get LLMs.txt File
+      description: |
+        Returns a standardized list of all user files in LLMs.txt format for AI/LLM consumption.
+        This endpoint provides an overview of available files for the authenticated user.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: LLMs.txt formatted file list
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # johndoe's Files
+
+                  This document lists all available files for johndoe.
+
+                  https://server.agent-pod.com/johndoe/documents/readme.md
+                  https://server.agent-pod.com/johndoe/config/app.json
+                  https://server.agent-pod.com/johndoe/scripts/deploy.sh
+        "401":
+          description: Unauthorized
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Use the access token obtained from the OAuth 2.0 flow.
+        Format: `Bearer resource_<encrypted_token>`
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error code
+        error_description:
+          type: string
+          description: Human-readable error description
+      example:
+        error: "invalid_request"
+        error_description: "Missing required parameter: client_id"
+
+    FileInfo:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Full file path
+          example: "/johndoe/documents/readme.md"
+        created_at:
+          type: integer
+          description: Creation timestamp (Unix)
+          example: 1703001600
+        updated_at:
+          type: integer
+          description: Last modification timestamp (Unix)
+          example: 1703088000
+        type:
+          type: string
+          enum: [file, folder]
+          description: Whether this is a file or folder
+        size:
+          type: integer
+          description: File size in bytes (0 for folders)
+          example: 1024
+
+    FileContent:
+      type: object
+      properties:
+        path:
+          type: string
+          example: "/johndoe/documents/readme.md"
+        type:
+          type: string
+          enum: [file]
+        content:
+          type: string
+          description: File content as string
+          example: "# My Project\n\nThis is a sample readme file."
+        size:
+          type: integer
+          description: File size in bytes
+          example: 1024
+        created_at:
+          type: integer
+          description: Creation timestamp (Unix)
+          example: 1703001600
+        updated_at:
+          type: integer
+          description: Last modification timestamp (Unix)
+          example: 1703088000
+
+    FolderContent:
+      type: object
+      properties:
+        path:
+          type: string
+          example: "/johndoe/documents"
+        type:
+          type: string
+          enum: [folder]
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileInfo"
+          description: List of files and folders in this directory
+
+# Usage Examples
+x-usage-examples:
+  oauth-flow:
+    title: "Complete OAuth 2.0 Flow Example"
+    description: |
+      Here's a complete example of implementing OAuth 2.0 flow in JavaScript:
+
+      ```javascript
+      // 1. Generate PKCE parameters
+      function generateCodeVerifier() {
+        const array = new Uint8Array(32);
+        crypto.getRandomValues(array);
+        return btoa(String.fromCharCode.apply(null, Array.from(array)))
+          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      }
+
+      async function generateCodeChallenge(verifier) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(verifier);
+        const digest = await crypto.subtle.digest('SHA-256', data);
+        return btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(digest))))
+          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      }
+
+      // 2. Start OAuth flow
+      async function startAuth() {
+        const codeVerifier = generateCodeVerifier();
+        const codeChallenge = await generateCodeChallenge(codeVerifier);
+        const state = generateCodeVerifier(); // Random state for CSRF protection
+        
+        // Store for later use
+        localStorage.setItem('code_verifier', codeVerifier);
+        localStorage.setItem('oauth_state', state);
+        
+        const authUrl = new URL('https://server.agent-pod.com/authorize');
+        authUrl.searchParams.set('response_type', 'code');
+        authUrl.searchParams.set('client_id', window.location.hostname); // Your app's hostname!
+        authUrl.searchParams.set('redirect_uri', 'https://myapp.com/callback');
+        authUrl.searchParams.set('scope', 'read:{resource} write:{resource}');
+        authUrl.searchParams.set('state', state);
+        authUrl.searchParams.set('code_challenge', codeChallenge);
+        authUrl.searchParams.set('code_challenge_method', 'S256');
+        
+        window.location.href = authUrl.toString();
+      }
+
+      // 3. Handle callback
+      async function handleCallback() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const state = urlParams.get('state');
+        
+        // Verify state
+        if (state !== localStorage.getItem('oauth_state')) {
+          throw new Error('Invalid state');
+        }
+        
+        // Exchange code for token
+        const tokenResponse = await fetch('https://server.agent-pod.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            code: code,
+            client_id: window.location.hostname,
+            redirect_uri: 'https://myapp.com/callback',
+            code_verifier: localStorage.getItem('code_verifier'),
+            resource: 'https://server.agent-pod.com'
+          })
+        });
+        
+        const tokenData = await tokenResponse.json();
+        localStorage.setItem('access_token', tokenData.access_token);
+        
+        return tokenData.access_token;
+      }
+
+      // 4. Make authenticated requests
+      async function getFiles() {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch('https://server.agent-pod.com/', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.json();
+      }
+
+      async function readFile(path) {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch(`https://server.agent-pod.com/${path}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.json();
+      }
+
+      async function writeFile(path, content) {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch(`https://server.agent-pod.com/${path}`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: content
+        });
+        return response.json();
+      }
+      ```
+
+  scope-examples:
+    title: "Scope Configuration Examples"
+    description: |
+      Different ways to request permissions:
+
+      **1. Variable Scopes (User Selects Resources)**
+      ```
+      scope=read:{resource} write:{resource}
+      ```
+      User will see a file picker to choose which files to grant access to.
+
+      **2. Specific File Access**
+      ```
+      scope=read:documents/readme.md write:config/app.json
+      ```
+      Request access to specific files only.
+
+      **3. Broad Access**
+      ```
+      scope=read write append
+      ```
+      Request access to all user files.
+
+      **4. Mixed Scopes**
+      ```
+      scope=read:{resource} write:logs/app.log append:data/metrics.json
+      ```
+      Combination of variable and specific scopes.
+
+  curl-examples:
+    title: "cURL Examples"
+    description: |
+      **Get authorization URL:**
+      ```bash
+      # First, get your code challenge ready
+      CODE_VERIFIER=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-43)
+      CODE_CHALLENGE=$(echo -n $CODE_VERIFIER | openssl sha256 -binary | base64 | tr -d "=+/" | cut -c1-43)
+      STATE=$(openssl rand -hex 16)
+
+      # Visit this URL in browser
+      echo "https://server.agent-pod.com/authorize?response_type=code&client_id=myapp.example.com&redirect_uri=https://myapp.example.com/callback&scope=read:{resource}&state=$STATE&code_challenge=$CODE_CHALLENGE&code_challenge_method=S256"
+      ```
+
+      **Exchange code for token:**
+      ```bash
+      curl -X POST https://server.agent-pod.com/token \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "grant_type=authorization_code" \
+        -d "code=AUTHORIZATION_CODE_FROM_CALLBACK" \
+        -d "client_id=myapp.example.com" \
+        -d "redirect_uri=https://myapp.example.com/callback" \
+        -d "code_verifier=$CODE_VERIFIER" \
+        -d "resource=https://server.agent-pod.com"
+      ```
+
+      **Get user info:**
+      ```bash
+      curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+        https://server.agent-pod.com/me
+      ```
+
+      **List files:**
+      ```bash
+      curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+        https://server.agent-pod.com/
+      ```
+
+      **Read file:**
+      ```bash
+      curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+        https://server.agent-pod.com/documents/readme.md
+      ```
+
+      **Write file:**
+      ```bash
+      curl -X PUT \
+        -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+        -d "# My File Content" \
+        https://server.agent-pod.com/documents/new-file.md
+      ```
+
+      **Delete file:**
+      ```bash
+      curl -X DELETE \
+        -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+        https://server.agent-pod.com/documents/old-file.md
+      ```
