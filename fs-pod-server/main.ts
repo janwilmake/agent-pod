@@ -52,9 +52,6 @@ interface FileNode extends Record<string, any> {
   created_at: number;
   updated_at: number;
   content?: string;
-  is_expanded: 0 | 1;
-  last_cursor_line: number;
-  last_cursor_column: number;
 }
 
 @Queryable()
@@ -72,7 +69,7 @@ export class TextDO extends DurableObject {
   }
 
   async initSQLite(): Promise<void> {
-    // Main nodes table for hierarchical file structure
+    // Main nodes table for hierarchical file structure (UI state removed)
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS nodes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,10 +80,7 @@ export class TextDO extends DurableObject {
         size INTEGER DEFAULT 0,
         created_at INTEGER DEFAULT (strftime('%s', 'now')),
         updated_at INTEGER DEFAULT (strftime('%s', 'now')),
-        content TEXT,
-        is_expanded BOOLEAN DEFAULT FALSE,
-        last_cursor_line INTEGER DEFAULT 1,
-        last_cursor_column INTEGER DEFAULT 1
+        content TEXT
       )
     `);
 
@@ -99,8 +93,77 @@ export class TextDO extends DurableObject {
     this.sql.exec(
       `CREATE INDEX IF NOT EXISTS idx_path_type ON nodes(path, type)`
     );
-    this.sql.exec(
-      `CREATE INDEX IF NOT EXISTS idx_expanded ON nodes(is_expanded)`
+  }
+
+  async fetch(request: Request) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const username = request.headers.get("x-username");
+
+    // Handle API endpoints
+    if (path.startsWith("/api/")) {
+      return this.handleAPIRequest(request, url, username);
+    }
+
+    // Handle llms.txt endpoint
+    if (path === "/llms.txt") {
+      const llmsTxt = this.generateLlmsTxt(username);
+      return new Response(llmsTxt, {
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+
+    // Handle file deletion
+    if (request.method === "DELETE") {
+      const deleted = this.deleteNode(path);
+      if (deleted) {
+        this.broadcastFileChange(username, "delete", path);
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } else {
+        return new Response(JSON.stringify({ error: "File not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Handle file content operations
+    if (request.method === "GET") {
+      return this.handleFileGet(url, username);
+    }
+
+    if (request.method === "PUT") {
+      const content = await request.text();
+      this.saveContent(path, content);
+      this.broadcastFileChange(username, "update", path, content);
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // WebSocket handling
+    if (request.headers.get("Upgrade") === "websocket") {
+      return this.handleWebSocket(request, username, path);
+    }
+
+    // Default API info response
+    return new Response(
+      `FS Pod Server API
+      
+Endpoints:
+
+- Files: GET/PUT/DELETE /{path}"
+- API: POST /api/{endpoint}
+- websocket: "WS /{path}
+- llms: "GET /llms.txt
+- admin: /studio
+- SQL api: /query
+      `,
+      {
+        headers: { "Content-Type": "application/json" },
+      }
     );
   }
 
@@ -125,12 +188,7 @@ export class TextDO extends DurableObject {
     return { name, parent_path };
   }
 
-  saveContent(
-    path: string,
-    content: string,
-    line: number = 1,
-    column: number = 1
-  ): void {
+  saveContent(path: string, content: string): void {
     const now = Math.round(Date.now() / 1000);
 
     const existing = this.sql
@@ -146,10 +204,10 @@ export class TextDO extends DurableObject {
 
     this.sql.exec(
       `
-      INSERT OR REPLACE INTO nodes (path, name, parent_path, type, size, content, created_at, updated_at, last_cursor_line, last_cursor_column)
+      INSERT OR REPLACE INTO nodes (path, name, parent_path, type, size, content, created_at, updated_at)
       VALUES (?, ?, ?, 'file', ?, ?, 
         COALESCE((SELECT created_at FROM nodes WHERE path = ?), ?), 
-        ?, ?, ?)
+        ?)
     `,
       path,
       name,
@@ -158,9 +216,7 @@ export class TextDO extends DurableObject {
       content,
       path,
       now,
-      now,
-      line,
-      column
+      now
     );
   }
 
@@ -182,17 +238,12 @@ export class TextDO extends DurableObject {
         const { name, parent_path } = this.parsePathComponents(currentPath);
         this.sql.exec(
           `
-          INSERT INTO nodes (path, name, parent_path, type, size, content, is_expanded) 
-          VALUES (?, ?, ?, 'folder', 0, NULL, TRUE)
+          INSERT INTO nodes (path, name, parent_path, type, size, content) 
+          VALUES (?, ?, ?, 'folder', 0, NULL)
         `,
           currentPath,
           name,
           parent_path
-        );
-      } else {
-        this.sql.exec(
-          `UPDATE nodes SET is_expanded = TRUE WHERE path = ? AND type = 'folder'`,
-          currentPath
         );
       }
     }
@@ -221,8 +272,8 @@ export class TextDO extends DurableObject {
 
     this.sql.exec(
       `
-      INSERT INTO nodes (path, name, parent_path, type, size, content, is_expanded) 
-      VALUES (?, ?, ?, 'folder', 0, NULL, TRUE)
+      INSERT INTO nodes (path, name, parent_path, type, size, content) 
+      VALUES (?, ?, ?, 'folder', 0, NULL)
     `,
       path,
       name,
@@ -364,15 +415,27 @@ export class TextDO extends DurableObject {
     return result.rowsWritten > 0;
   }
 
-  toggleExpansion(path: string): void {
-    this.sql.exec(
-      `
-      UPDATE nodes 
-      SET is_expanded = NOT is_expanded, updated_at = strftime('%s', 'now')
-      WHERE path = ? AND type = 'folder'
-    `,
-      path
-    );
+  getVisibleNodes(expandedPaths: string[], username: string): FileNode[] {
+    // Always include root level nodes
+    let visibleCondition = `parent_path IS NULL OR parent_path = '/${username}'`;
+    let params = [`/${username}/%`, `/${username}`];
+
+    // Add children of expanded folders
+    if (expandedPaths.length > 0) {
+      const expandedPlaceholders = expandedPaths.map(() => "?").join(",");
+      visibleCondition += ` OR parent_path IN (${expandedPlaceholders})`;
+      params.push(...expandedPaths);
+    }
+
+    const query = `
+      SELECT id, path, name, parent_path, type, size, created_at, updated_at, content
+      FROM nodes 
+      WHERE (path LIKE ? OR path = ?) AND (${visibleCondition})
+      ORDER BY parent_path, type DESC, name ASC
+    `;
+
+    const nodes = this.sql.exec<FileNode>(query, ...params).toArray();
+    return nodes;
   }
 
   generateLlmsTxt(username: string): string {
@@ -401,93 +464,6 @@ export class TextDO extends DurableObject {
     }
 
     return llmsTxt;
-  }
-
-  async fetch(request: Request) {
-    const url = new URL(request.url);
-    const path = url.pathname;
-    const username = request.headers.get("x-username");
-    // Handle expansion/collapse via query params
-    const expand = url.searchParams.get("expand");
-    const unexpand = url.searchParams.get("unexpand");
-
-    if (expand) {
-      this.toggleExpansion(expand);
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (unexpand) {
-      this.toggleExpansion(unexpand);
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    // Handle API endpoints
-    if (path.startsWith("/api/")) {
-      return this.handleAPIRequest(request, url, username);
-    }
-
-    // Handle llms.txt endpoint
-    if (path === "/llms.txt") {
-      const llmsTxt = this.generateLlmsTxt(username);
-      return new Response(llmsTxt, {
-        headers: { "Content-Type": "text/plain" },
-      });
-    }
-
-    // Handle file deletion
-    if (request.method === "DELETE") {
-      const deleted = this.deleteNode(path);
-      if (deleted) {
-        this.broadcastFileChange(username, "delete", path);
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { "Content-Type": "application/json" },
-        });
-      } else {
-        return new Response(JSON.stringify({ error: "File not found" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-    }
-
-    // Handle file content operations
-    if (request.method === "GET") {
-      return this.handleFileGet(url, username);
-    }
-
-    if (request.method === "PUT") {
-      const content = await request.text();
-      this.saveContent(path, content);
-      this.broadcastFileChange(username, "update", path, content);
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    // WebSocket handling
-    if (request.headers.get("Upgrade") === "websocket") {
-      return this.handleWebSocket(request, username, path);
-    }
-
-    // Default API info response
-    return new Response(
-      JSON.stringify({
-        message: "XYText API",
-        endpoints: {
-          files: "GET/PUT/DELETE /{path}",
-          api: "POST /api/{endpoint}",
-          websocket: "WS /{path}",
-          llms: "GET /llms.txt",
-        },
-      }),
-      {
-        headers: { "Content-Type": "application/json" },
-      }
-    );
   }
 
   handleFileGet(url: URL, username: string): Response {
@@ -521,7 +497,7 @@ export class TextDO extends DurableObject {
     const nodeResult = this.sql
       .exec(
         `
-      SELECT content, type, last_cursor_line, last_cursor_column, created_at, updated_at, size FROM nodes WHERE path = ?
+      SELECT content, type, created_at, updated_at, size FROM nodes WHERE path = ?
     `,
         path
       )
@@ -529,8 +505,6 @@ export class TextDO extends DurableObject {
       | {
           content: string;
           type: string;
-          last_cursor_line: number;
-          last_cursor_column: number;
           created_at: number;
           updated_at: number;
           size: number;
@@ -575,10 +549,6 @@ export class TextDO extends DurableObject {
         path: path,
         type: "file",
         content: nodeResult.content || "",
-        cursor: {
-          line: nodeResult.last_cursor_line,
-          column: nodeResult.last_cursor_column,
-        },
         size: nodeResult.size,
         created_at: nodeResult.created_at,
         updated_at: nodeResult.updated_at,
@@ -607,6 +577,14 @@ export class TextDO extends DurableObject {
           headers: { "Content-Type": "application/json" },
         });
       }
+    }
+
+    if (apiEndpoint === "visible-nodes" && request.method === "POST") {
+      const { expandedPaths = [] } = requestData;
+      const visibleNodes = this.getVisibleNodes(expandedPaths, username);
+      return new Response(JSON.stringify({ nodes: visibleNodes }), {
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     if (apiEndpoint === "create-file" && request.method === "POST") {
@@ -751,12 +729,10 @@ export class TextDO extends DurableObject {
 
     // Get current file content
     let textContent = "";
-    let cursorLine = 1;
-    let cursorColumn = 1;
     const nodeResult = this.sql
       .exec(
         `
-      SELECT content, type, last_cursor_line, last_cursor_column FROM nodes WHERE path = ?
+      SELECT content, type FROM nodes WHERE path = ?
     `,
         path
       )
@@ -764,15 +740,11 @@ export class TextDO extends DurableObject {
       | {
           content: string;
           type: string;
-          last_cursor_line: number;
-          last_cursor_column: number;
         }
       | undefined;
 
     if (nodeResult && nodeResult.type === "file") {
       textContent = nodeResult.content || "";
-      cursorLine = nodeResult.last_cursor_line || 1;
-      cursorColumn = nodeResult.last_cursor_column || 1;
     }
 
     this.sessions.set(sessionId, {
@@ -817,8 +789,6 @@ export class TextDO extends DurableObject {
         sessionCount: this.sessions.size,
         sessions,
         username,
-        line: cursorLine,
-        column: cursorColumn,
       })
     );
 
@@ -832,7 +802,7 @@ export class TextDO extends DurableObject {
         ) {
           this.version = data.version;
           try {
-            this.saveContent(path, data.text, data.line || 1, data.column || 1);
+            this.saveContent(path, data.text);
             this.broadcastFileChange(username, "update", path, data.text);
           } catch (error) {
             server.send(
@@ -853,19 +823,6 @@ export class TextDO extends DurableObject {
               line: data.line,
               column: data.column,
             },
-            path
-          );
-        } else if (
-          data.type === "cursor_position" &&
-          data.line &&
-          data.column
-        ) {
-          this.sql.exec(
-            `
-            UPDATE nodes SET last_cursor_line = ?, last_cursor_column = ? WHERE path = ? AND type = 'file'
-          `,
-            data.line,
-            data.column,
             path
           );
         }
@@ -936,18 +893,12 @@ export default {
         return new Response(null, { headers: corsHeaders });
       }
 
+      const stub = env.TEXT.get(
+        env.TEXT.idFromName(ctx.user.id + DO_NAME_SUFFIX)
+      );
+
       // Handle studio endpoint
       if (url.pathname === "/studio") {
-        if (!ctx.authenticated) {
-          return new Response(JSON.stringify({ error: "Unauthorized" }), {
-            status: 401,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const stub = env.TEXT.get(
-          env.TEXT.idFromName(ctx.user!.id + DO_NAME_SUFFIX)
-        );
         return studioMiddleware(request, stub.raw, {
           dangerouslyDisableAuth: true,
         });
@@ -955,16 +906,6 @@ export default {
 
       // Handle exec endpoint
       if (url.pathname === "/exec") {
-        if (!ctx.authenticated) {
-          return new Response(JSON.stringify({ error: "Unauthorized" }), {
-            status: 401,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const stub = env.TEXT.get(
-          env.TEXT.idFromName(ctx.user!.id + DO_NAME_SUFFIX)
-        );
         const query = url.searchParams.get("query");
         const bindings = url.searchParams.getAll("binding");
         const result = await stub.exec(query, ...bindings);
@@ -973,19 +914,11 @@ export default {
         });
       }
 
-      // All other requests require authentication
-      if (!ctx.authenticated) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      // Add username to request headers for the DO
+      const newRequest = new Request(request);
+      newRequest.headers.set("x-username", ctx.user.username);
 
-      const stub = env.TEXT.get(
-        env.TEXT.idFromName(ctx.user.id + DO_NAME_SUFFIX)
-      );
-
-      const response = await stub.fetch(request);
+      const response = await stub.fetch(newRequest);
 
       // Add CORS headers to all responses
       const newResponse = new Response(response.body, response);
@@ -996,6 +929,6 @@ export default {
 
       return newResponse;
     },
-    { isLoginRequired: false, scope: "profile" }
+    { isLoginRequired: true, scope: "profile" }
   ),
 };

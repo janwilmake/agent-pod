@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/wrangler@latest/config-schema.json",
+  "name": "fs-pod-server",
+  "main": "main.ts",
+  "compatibility_date": "2025-09-15",
+  "dev": { "port": 3000 },
+  "durable_objects": {
+    "bindings": [{ "name": "TEXT", "class_name": "TextDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TextDO"] }],
+  "routes": [{ "pattern": "server.agent-pod.com", "custom_domain": true }]
+}
