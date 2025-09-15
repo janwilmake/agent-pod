@@ -13,7 +13,7 @@ Demo: https://server.agent-pod.com
 3. ✅ clean up api footprint a bit more. focus on purely necessary for file access.
 4. come up with scopes of that apps using this file system may request. definitely needs ability for user to select fs scope, read,write,time-bound, etc. this is cool. needs to be added to simplerauth clients login flow.
 5. create a super clear documentation about the API and how to make a client
-6. see how this differs from https://solidproject.org/TR/protocol and if its worth refactoring it towards it (probably)
+6. see how this differs from https://solidproject.org/TR/protocol and if its worth refactoring it towards it - https://letmeprompt.com/rules-httpsuithu-wknp8p0
 7. once I have this with oauth provider:
 
 - build the frontend against this separately. this part could also control making stuff public and followable.
