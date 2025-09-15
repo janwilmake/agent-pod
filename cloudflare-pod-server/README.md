@@ -34,3 +34,8 @@ OpenAPI spec: https://server.agent-pod.com/openapi.yaml
 - Consider granting read/write scope by default to `clients/{client_id}/*`, reserving this space for any client.
 
 This now opens the door for doing much more because it allows easily making web-based apps that use a central file system without owning the data.
+
+To work towards an MVP that is viable open source:
+
+- Instruct users to self-host this on their own Cloudflare
+- Offer a clear path to creating pod servers that can be hosted anywhere
