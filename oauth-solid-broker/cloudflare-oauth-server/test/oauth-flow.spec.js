@@ -134,4 +134,16 @@ describe("OAuth2 Authorization Code + PKCE flow", () => {
     expect(u.searchParams.get("error")).toBe("access_denied");
     expect(u.searchParams.get("state")).toBe(state);
   });
+
+  it("rejects access without Authorization header", async () => {
+    const resp = await SELF.fetch("http://test/api/whoami");
+    expect(resp.status).toBe(401);
+  });
+
+  it("rejects access with invalid token", async () => {
+    const resp = await SELF.fetch("http://test/api/whoami", {
+      headers: { authorization: "Bearer not-a-real-token" },
+    });
+    expect(resp.status).toBe(401);
+  });
 });

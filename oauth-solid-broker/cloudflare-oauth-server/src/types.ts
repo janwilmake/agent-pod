@@ -31,4 +31,7 @@ export type OAuthExecutionContext = ExecutionContext & {
 export interface Env {
   OAUTH_KV: KVNamespace;
   OAUTH_PROVIDER: OAuthProviderHelpers;
+  // Optional service binding to a separate backend Worker. When present, API requests
+  // will be forwarded to this service with auth props attached in headers.
+  API_BACKEND?: Fetcher;
 }
