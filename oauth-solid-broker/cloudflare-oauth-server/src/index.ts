@@ -5,7 +5,7 @@ import { ApiHandler } from "./api";
 
 const uiApp = buildUiApp();
 
-export default new OAuthProvider<Env>({
+export default new OAuthProvider({
   // All routes under /api/ require a valid access token and are sent to ApiHandler.
   apiRoute: "/api/",
   apiHandler: ApiHandler,
@@ -13,7 +13,7 @@ export default new OAuthProvider<Env>({
   // Non-API routes (including authorize UI) are handled here.
   defaultHandler: {
     async fetch(request, env, ctx) {
-      return uiApp.fetch(request, env, ctx);
+      return uiApp.fetch(request, env as any, ctx as any);
     },
   },
 

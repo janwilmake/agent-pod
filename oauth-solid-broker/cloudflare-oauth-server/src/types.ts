@@ -24,12 +24,11 @@ export interface OAuthProviderHelpers {
 }
 
 // Execution context that may carry OAuth props when API routes are called
-export interface OAuthExecutionContext extends ExecutionContext {
+export type OAuthExecutionContext = ExecutionContext & {
   props?: Record<string, unknown>;
-}
+};
 
 export interface Env {
   OAUTH_KV: KVNamespace;
   OAUTH_PROVIDER: OAuthProviderHelpers;
 }
-
