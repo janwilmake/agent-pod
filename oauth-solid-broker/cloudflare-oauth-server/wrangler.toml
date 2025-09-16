@@ -1,0 +1,18 @@
+name = "cloudflare-oauth-server"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+# Bind a Workers KV namespace for token and client storage
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+# Replace these IDs with your own via `wrangler kv namespace create OAUTH_KV`
+# For local dev, wrangler provides an in-memory KV automatically.
+id = "00000000000000000000000000000000"
+preview_id = "11111111111111111111111111111111"
+
+[observability]
+enabled = true
+
+[dev]
+port = 8799
+local_protocol = "http"
