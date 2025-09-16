@@ -1,0 +1,32 @@
+name = "solid-broker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+[[kv_namespaces]]
+binding = "BROKER_KV"
+id = "00000000000000000000000000000000"
+preview_id = "11111111111111111111111111111111"
+
+[vars]
+# External issuer URL of this broker (must match how clients access it)
+BROKER_ISSUER = "http://localhost:8789"
+# Host used to mint WebIDs: webid = https://<WEBID_HOST>/<sub>
+WEBID_HOST = "id.localhost"
+# Default TTL for tokens
+TOKEN_TTL_SECONDS = 300
+# Backing provider config (example: local cloudflare-oauth-server)
+BACKING_ISSUER = "http://localhost:8799"
+BACKING_CLIENT_ID = "replace-me"
+BACKING_AUTH_PATH = "/authorize"
+BACKING_TOKEN_PATH = "/oauth/token"
+# Optional userinfo path if backing provider is OAuth2-only
+# BACKING_USERINFO_PATH = "/api/whoami"
+JWT_KID = "broker-key-1"
+
+[observability]
+enabled = true
+
+[dev]
+port = 8789
+local_protocol = "http"
+
