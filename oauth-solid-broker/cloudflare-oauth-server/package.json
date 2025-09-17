@@ -8,7 +8,8 @@
     "start": "wrangler dev --port 8799",
     "deploy": "wrangler deploy --minify",
     "check": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "seed-client": "./seed-client.sh"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240919.0",

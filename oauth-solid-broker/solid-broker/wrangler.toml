@@ -10,13 +10,17 @@ preview_id = "11111111111111111111111111111111"
 [vars]
 # External issuer URL of this broker (must match how clients access it)
 BROKER_ISSUER = "http://localhost:8789"
-# Host used to mint WebIDs: webid = https://<WEBID_HOST>/<sub>
-WEBID_HOST = "id.localhost"
+# WebID strategy:
+# - Set to "self" to mint: <BROKER_ISSUER>/webid/<sub>#me
+# - Or set a hostname to mint: https://<WEBID_HOST>/<sub><WEBID_PATH><WEBID_FRAGMENT>
+WEBID_HOST = "self"
+WEBID_PATH = ""
+WEBID_FRAGMENT = "#me"
 # Default TTL for tokens
 TOKEN_TTL_SECONDS = 300
 # Backing provider config (example: local cloudflare-oauth-server)
 BACKING_ISSUER = "http://localhost:8799"
-BACKING_CLIENT_ID = "replace-me"
+BACKING_CLIENT_ID = "oftL3RsnoPgaO5Lz"
 BACKING_AUTH_PATH = "/authorize"
 BACKING_TOKEN_PATH = "/oauth/token"
 # Optional userinfo path if backing provider is OAuth2-only
@@ -29,4 +33,3 @@ enabled = true
 [dev]
 port = 8789
 local_protocol = "http"
-

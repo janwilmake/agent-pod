@@ -63,7 +63,8 @@ function escapeHtml(s: string): string {
 }
 
 function renderAuthorizePage(info: any, client: any): string {
-  const requestedScopes = (info.scope || "").split(/\s+/).filter(Boolean);
+  const scopeStr = Array.isArray(info.scope) ? info.scope.join(" ") : (info.scope || "");
+  const requestedScopes = scopeStr.split(/\s+/).filter(Boolean);
   return layout(
     "Authorize Access",
     `
@@ -79,7 +80,7 @@ function renderAuthorizePage(info: any, client: any): string {
         ${hiddenField("response_type", info.responseType)}
         ${hiddenField("client_id", info.clientId)}
         ${hiddenField("redirect_uri", info.redirectUri)}
-        ${hiddenField("scope", info.scope || "")}
+        ${hiddenField("scope", scopeStr)}
         ${hiddenField("state", info.state || "")}
         ${hiddenField("code_challenge", info.codeChallenge || "")}
         ${hiddenField("code_challenge_method", info.codeChallengeMethod || "")}

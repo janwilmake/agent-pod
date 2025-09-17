@@ -7,11 +7,14 @@
     "dev": "wrangler dev --port 8789",
     "start": "wrangler dev --port 8789",
     "deploy": "wrangler deploy --minify",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240919.0",
+    "@cloudflare/vitest-pool-workers": "^0.9.1",
     "typescript": "^5.5.4",
+    "vitest": "~3.2.0",
     "wrangler": "^3.78.0"
   },
   "dependencies": {

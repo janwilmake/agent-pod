@@ -3,7 +3,11 @@ export interface Env {
 
   // Broker issuer and webid config
   BROKER_ISSUER: string; // e.g., https://openid.example.com
-  WEBID_HOST: string; // e.g., id.example.com
+  // If set to "self", mint WebIDs under the broker issuer: `${BROKER_ISSUER}/webid/<sub>#me`.
+  // Otherwise, use as host part: `https://${WEBID_HOST}/<sub><WEBID_PATH><WEBID_FRAGMENT>`.
+  WEBID_HOST: string; // e.g., id.example.com or "self"
+  WEBID_PATH?: string; // e.g., "/profile/card"
+  WEBID_FRAGMENT?: string; // e.g., "#me"
   TOKEN_TTL_SECONDS?: number; // e.g., 300
 
   // Signing keys
@@ -53,4 +57,3 @@ export type CodeRecord = {
   code_challenge?: string;
   code_challenge_method?: "S256" | "plain";
 };
-

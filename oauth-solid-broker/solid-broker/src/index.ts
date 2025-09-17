@@ -11,6 +11,16 @@ function parseUrl(base: string, path: string): string { return new URL(path, bas
 
 function parseScopes(s?: string): string[] { return (s || "").split(/\s+/).filter(Boolean); }
 
+function buildWebId(env: Env, sub: string): string {
+  const frag = env.WEBID_FRAGMENT ?? "#me";
+  if (env.WEBID_HOST === "self") {
+    return `${env.BROKER_ISSUER.replace(/\/$/, "")}/webid/${encodeURIComponent(sub)}${frag}`;
+  }
+  const path = env.WEBID_PATH ?? "";
+  const normalizedPath = path && !path.startsWith("/") ? `/${path}` : path;
+  return `https://${env.WEBID_HOST}/${encodeURIComponent(sub)}${normalizedPath}${frag}`;
+}
+
 async function getClient(env: Env, clientId: string): Promise<Client | null> {
   const raw = await env.BROKER_KV.get(`client:${clientId}`, { type: "json" });
   return (raw as Client) || null;
@@ -75,6 +85,7 @@ app.get("/.well-known/openid-configuration", async (c) => {
     authorization_endpoint,
     token_endpoint,
     jwks_uri,
+    userinfo_endpoint: parseUrl(issuer, "/userinfo"),
     response_types_supported: ["code"],
     subject_types_supported: ["public"],
     id_token_signing_alg_values_supported: ["RS256"],
@@ -162,7 +173,7 @@ app.get("/callback", async (c) => {
   const backingTokens = await exchangeCodeAtBacking(env, code, parseUrl(env.BROKER_ISSUER, "/callback"));
   const { sub } = await getBackingSubject(env, backingTokens);
 
-  const webid = `https://${env.WEBID_HOST}/${encodeURIComponent(sub)}`;
+  const webid = buildWebId(env, sub);
   const scope = parseScopes(stored.scope);
   const ttlSec = Number(env.TOKEN_TTL_SECONDS || 300);
   const rec: CodeRecord = {
@@ -263,5 +274,29 @@ app.post("/token", async (c) => {
   });
 });
 
-export default app;
+// Minimal userinfo (optional). Returns sub and webid based on the token.
+app.get("/userinfo", async (c) => {
+  const auth = c.req.header("authorization") || "";
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  if (!m) return c.json({ error: "invalid_token" }, 401);
+  try {
+    // Decode payload without verification for MVP.
+    const payload = JSON.parse(atob(m[1].split(".")[1])) || {};
+    return c.json({ sub: payload.sub, webid: payload.webid });
+  } catch {
+    return c.json({ error: "invalid_token" }, 401);
+  }
+});
 
+// Serve minimal WebID profiles when WEBID_HOST = "self"
+app.get("/webid/:sub", async (c) => {
+  const env = c.env;
+  if (env.WEBID_HOST !== "self") return c.text("Not found", 404);
+  const sub = c.req.param("sub");
+  const webid = buildWebId(env, sub);
+  const ttl = 60;
+  const turtle = `@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n@prefix solid: <http://www.w3.org/ns/solid/terms#> .\n\n<#me> a foaf:Person ;\n  solid:oidcIssuer <${env.BROKER_ISSUER}> .\n`;
+  return new Response(turtle, { status: 200, headers: { "content-type": "text/turtle", "cache-control": `max-age=${ttl}` } });
+});
+
+export default app;
