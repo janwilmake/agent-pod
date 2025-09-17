@@ -54,6 +54,7 @@ async function toPublicKey(priv: CryptoKey): Promise<CryptoKey> {
   delete jwk.dq;
   delete jwk.q;
   delete jwk.qi;
+  delete jwk.key_ops; // Remove key_ops to avoid WebCrypto validation issues
   return crypto.subtle.importKey(
     "jwk",
     jwk,

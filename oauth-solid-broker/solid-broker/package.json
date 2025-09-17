@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --port 8789",
+    "dev:logged": "mkdir -p ../e2e/logs && wrangler dev --port 8789 2>&1 | tee ../e2e/logs/solid-broker.log",
     "start": "wrangler dev --port 8789",
     "deploy": "wrangler deploy --minify",
     "check": "tsc --noEmit",

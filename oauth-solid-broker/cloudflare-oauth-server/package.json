@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --port 8799",
+    "dev:logged": "mkdir -p ../e2e/logs && wrangler dev --port 8799 2>&1 | tee ../e2e/logs/oauth-server.log",
     "start": "wrangler dev --port 8799",
     "deploy": "wrangler deploy --minify",
     "check": "tsc --noEmit",
