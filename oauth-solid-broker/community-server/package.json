@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "community-solid-server -c @css:config/file.json -f data/",
-    "start:logged": "mkdir -p ../e2e/logs && community-solid-server -c @css:config/file.json -f data/ 2>&1 | tee ../e2e/logs/community-server.log",
+    "start": "community-solid-server -p 3000 -b http://localhost:3000/  -f ./data -l debug --showStackTrace",
+    "start:logged": "mkdir -p ../e2e/logs && community-solid-server -p 3000 -b http://localhost:3000/  -f ./data -l debug --showStackTrace  2>&1 | tee ../e2e/logs/community-server.log",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
