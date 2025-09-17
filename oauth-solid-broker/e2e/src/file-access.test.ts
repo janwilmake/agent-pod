@@ -24,6 +24,28 @@ interface TestContext {
 
 describe('File Access Tests', () => {
   let context: TestContext;
+  const publicFileUrl = 'http://localhost:3000/public/test-file.txt';
+  const publicFileContent = `Hello from Foobar public file!\nUpdated at: ${new Date().toISOString()}`;
+
+  let privateFileUrl: string;
+  let privateFileContent: string;
+  let privateFileAclUrl: string;
+
+  const putFile = async (url: string, body: string, contentType: string) => {
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${context.accessToken}`,
+        'Content-Type': contentType
+      },
+      body
+    });
+
+    if (![200, 201, 202, 204, 205].includes(response.status)) {
+      const error = await response.text();
+      throw new Error(`Failed to seed CSS file at ${url}: ${response.status} ${error}`);
+    }
+  };
 
   beforeAll(async () => {
     // Get valid tokens for file access tests
@@ -47,41 +69,43 @@ describe('File Access Tests', () => {
       sub: context.sub,
       tokenLength: context.accessToken.length
     });
+
+    privateFileUrl = `http://localhost:3000/private/${context.sub}/profile.ttl`;
+    privateFileAclUrl = `${privateFileUrl}.acl`;
+    privateFileContent = `@prefix foaf: <http://xmlns.com/foaf/0.1/> .\n@prefix solid: <http://www.w3.org/ns/solid/terms#> .\n\n<#me> a foaf:Person ;\n  foaf:name "Foobar Test User" ;\n  solid:oidcIssuer <http://localhost:8789> .\n`;
+
+    // Seed CSS with known resources we can assert against
+    await putFile(publicFileUrl, publicFileContent, 'text/plain');
+    await putFile(privateFileUrl, privateFileContent, 'text/turtle');
+    await putFile(privateFileAclUrl,
+      `@prefix acl: <http://www.w3.org/ns/auth/acl#> .\n\n<#owner> a acl:Authorization ;\n  acl:agent <${context.webid}> ;\n  acl:accessTo <${privateFileUrl}> ;\n  acl:mode acl:Read, acl:Write, acl:Append, acl:Control .\n`,
+      'text/turtle');
   });
 
   it('should read a public test file from Community Server', async () => {
-    // Try to read a test file that should be publicly accessible
-    const testFileUrl = 'http://localhost:3000/public/test-file.txt';
-    
-    const response = await fetch(testFileUrl, {
+    const response = await fetch(publicFileUrl, {
       headers: {
         'Authorization': `Bearer ${context.accessToken}`
       }
     });
 
-    console.log(`Reading public file: ${testFileUrl} -> ${response.status}`);
+    console.log(`Reading public file: ${publicFileUrl} -> ${response.status}`);
 
-    // For now, we expect this to fail because the file doesn't exist yet
-    // But we want to see what kind of error we get
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.log('Error response:', errorText);
-      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-    } else {
-      const content = await response.text();
-      console.log('File content:', content);
-      expect(content).toBeTruthy();
-    }
-
-    // Initially, we expect this to fail with 404 (file doesn't exist)
-    // Later, we'll create the file and make this test pass
-    expect([200, 401, 403, 404]).toContain(response.status);
+    expect(response.status).toBe(200);
+    const content = await response.text();
+    expect(content).toBe(publicFileContent);
   });
 
   it('should access private file with proper WebID authorization', async () => {
-    // Try to access a file that requires WebID authorization
-    const privateFileUrl = `http://localhost:3000/private/${context.sub}/profile.ttl`;
-    
+    const unauthorizedResponse = await fetch(privateFileUrl, {
+      headers: {
+        'Accept': 'text/turtle'
+      }
+    });
+
+    console.log(`Reading private file without auth: ${privateFileUrl} -> ${unauthorizedResponse.status}`);
+    expect([401, 403]).toContain(unauthorizedResponse.status);
+
     const response = await fetch(privateFileUrl, {
       headers: {
         'Authorization': `Bearer ${context.accessToken}`,
@@ -91,14 +115,9 @@ describe('File Access Tests', () => {
 
     console.log(`Reading private file: ${privateFileUrl} -> ${response.status}`);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.log('Private file error:', errorText);
-      console.log('WWW-Authenticate header:', response.headers.get('WWW-Authenticate'));
-    }
-
-    // Initially expect this to fail - we'll implement the ACL setup later
-    expect([200, 401, 403, 404]).toContain(response.status);
+    expect(response.status).toBe(200);
+    const content = await response.text();
+    expect(content).toBe(privateFileContent);
   });
 
   it('should create a new file with Bearer token', async () => {
@@ -116,27 +135,18 @@ describe('File Access Tests', () => {
 
     console.log(`Creating file: ${newFileUrl} -> ${response.status}`);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.log('Create file error:', errorText);
-      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-    }
-
-    // Initially expect this to fail until we set up proper permissions
-    expect([201, 401, 403, 404]).toContain(response.status);
+    expect([200, 201, 202, 204, 205]).toContain(response.status);
 
     // If successful, verify we can read it back
-    if (response.status === 201) {
-      const readResponse = await fetch(newFileUrl, {
-        headers: {
-          'Authorization': `Bearer ${context.accessToken}`
-        }
-      });
-      
-      expect(readResponse.ok).toBe(true);
-      const readContent = await readResponse.text();
-      expect(readContent).toBe(fileContent);
-    }
+    const readResponse = await fetch(newFileUrl, {
+      headers: {
+        'Authorization': `Bearer ${context.accessToken}`
+      }
+    });
+
+    expect(readResponse.status).toBe(200);
+    const readContent = await readResponse.text();
+    expect(readContent).toBe(fileContent);
   });
 
   it('should get proper CORS headers from CSS', async () => {
@@ -158,9 +168,6 @@ describe('File Access Tests', () => {
   });
 
   it('should validate token against broker JWKS', async () => {
-    // CSS should fetch and validate our token against broker's JWKS endpoint
-    // This test verifies the end-to-end token validation flow
-    
     const testUrl = 'http://localhost:3000/';
     const response = await fetch(testUrl, {
       headers: {
@@ -170,16 +177,6 @@ describe('File Access Tests', () => {
 
     console.log(`CSS token validation test: ${testUrl} -> ${response.status}`);
 
-    if (response.status === 401) {
-      const wwwAuth = response.headers.get('WWW-Authenticate');
-      console.log('WWW-Authenticate:', wwwAuth);
-      
-      // CSS should indicate it tried to validate the token
-      // and either succeeded or failed for a specific reason
-      expect(wwwAuth).toBeTruthy();
-    }
-
-    // We expect either success (200) or specific auth errors (401/403)
-    expect([200, 401, 403]).toContain(response.status);
+    expect(response.status).toBe(200);
   });
 });
