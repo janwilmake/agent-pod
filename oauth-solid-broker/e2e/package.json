@@ -1,0 +1,19 @@
+{
+  "name": "solid-broker-e2e-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/runner.ts",
+    "start": "tsx src/runner.ts",
+    "all": "tsx src/runner.ts all --verbose"
+  },
+  "dependencies": {
+    "@drizzle-team/brocli": "^0.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.16.0"
+  }
+}
+

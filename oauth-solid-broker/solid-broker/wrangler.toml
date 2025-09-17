@@ -20,7 +20,6 @@ WEBID_FRAGMENT = "#me"
 TOKEN_TTL_SECONDS = 300
 # Backing provider config (example: local cloudflare-oauth-server)
 BACKING_ISSUER = "http://localhost:8799"
-BACKING_CLIENT_ID = "oftL3RsnoPgaO5Lz"
 BACKING_AUTH_PATH = "/authorize"
 BACKING_TOKEN_PATH = "/oauth/token"
 # Optional userinfo path if backing provider is OAuth2-only

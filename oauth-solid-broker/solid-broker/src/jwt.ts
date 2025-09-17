@@ -18,9 +18,11 @@ export type Jwk = {
 
 export async function importPrivateKeyFromPem(pem: string): Promise<CryptoKey> {
   const lines = pem.trim().split(/\r?\n/);
+  // Strip header/footer lines and all whitespace/indentation inside the base64 payload
   const body = lines
     .filter((l) => !l.startsWith("---"))
-    .join("");
+    .join("")
+    .replace(/\s+/g, "");
   const raw = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
   return crypto.subtle.importKey(
     "pkcs8",
@@ -91,4 +93,3 @@ export async function makeSigner(env: Env) {
     },
   };
 }
-

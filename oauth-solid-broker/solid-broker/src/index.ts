@@ -40,11 +40,15 @@ async function exchangeCodeAtBacking(env: Env, code: string, redirectUri: string
   body.set("grant_type", "authorization_code");
   body.set("code", code);
   body.set("redirect_uri", redirectUri);
-  body.set("client_id", env.BACKING_CLIENT_ID);
-  body.set("client_secret", env.BACKING_CLIENT_SECRET);
+
+  // Authenticate to the backing provider using HTTP Basic (recommended by RFC 6749)
+  const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded" };
+  const creds = btoa(`${env.BACKING_CLIENT_ID}:${env.BACKING_CLIENT_SECRET}`);
+  headers["authorization"] = `Basic ${creds}`;
+
   const res = await fetch(tokenUrl, {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
+    headers,
     body: body.toString(),
   });
   if (!res.ok) throw new Error(`backing token error ${res.status}`);
