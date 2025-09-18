@@ -1,5 +1,5 @@
 name = "foobar-app"
-main = "src/index.tsx"
+main = "src/index.ts"
 compatibility_date = "2024-09-23"
 
 [[kv_namespaces]]
