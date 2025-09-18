@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
 import { loadConfig } from './config/env';
-import usersController from './controllers/usersController';
+import usersRoutes from './routes/users';
 import { buildUserService } from './services/userService';
 import type { AppContext } from './types/app';
 import { AppError } from './utils/errors';
@@ -26,7 +26,7 @@ app.get('/', (c) =>
 
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
-app.route('/api/users', usersController);
+app.route('/api/users', usersRoutes);
 
 app.notFound((c) => c.json({ error: 'Not Found' }, asStatus(404)));
 
