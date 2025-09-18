@@ -7,6 +7,25 @@ const passwordRegex = {
   special: /[^A-Za-z0-9]/,
 };
 
+export const passwordSchema = z
+  .string()
+  .min(10, 'password must be at least 10 characters long')
+  .max(128, 'password must be less than 129 characters')
+  .superRefine((value, ctx) => {
+    if (!passwordRegex.upper.test(value)) {
+      ctx.addIssue({ code: 'custom', message: 'password must include an uppercase letter' });
+    }
+    if (!passwordRegex.lower.test(value)) {
+      ctx.addIssue({ code: 'custom', message: 'password must include a lowercase letter' });
+    }
+    if (!passwordRegex.digit.test(value)) {
+      ctx.addIssue({ code: 'custom', message: 'password must include a digit' });
+    }
+    if (!passwordRegex.special.test(value)) {
+      ctx.addIssue({ code: 'custom', message: 'password must include a special character' });
+    }
+  });
+
 export const createUserRequestSchema = z
   .object({
     email: z.string().email(),
@@ -15,24 +34,7 @@ export const createUserRequestSchema = z
       .min(1, 'name is required')
       .transform((value) => value.trim())
       .refine((value) => value.length > 0, 'name is required'),
-    password: z
-      .string()
-      .min(10, 'password must be at least 10 characters long')
-      .max(128, 'password must be less than 129 characters')
-      .superRefine((value, ctx) => {
-        if (!passwordRegex.upper.test(value)) {
-          ctx.addIssue({ code: 'custom', message: 'password must include an uppercase letter' });
-        }
-        if (!passwordRegex.lower.test(value)) {
-          ctx.addIssue({ code: 'custom', message: 'password must include a lowercase letter' });
-        }
-        if (!passwordRegex.digit.test(value)) {
-          ctx.addIssue({ code: 'custom', message: 'password must include a digit' });
-        }
-        if (!passwordRegex.special.test(value)) {
-          ctx.addIssue({ code: 'custom', message: 'password must include a special character' });
-        }
-      }),
+    password: passwordSchema,
   })
   .transform((payload) => ({
     ...payload,

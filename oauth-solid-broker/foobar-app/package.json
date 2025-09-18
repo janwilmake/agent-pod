@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
+    "dev:logged": "mkdir -p ../e2e/logs && wrangler dev 2>&1 | tee ../e2e/logs/foobar-app.log",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
   },

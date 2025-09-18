@@ -1,4 +1,5 @@
 import type { AppEnv } from '../config/env';
+import type { StytchService, StytchSession, StytchUserProfile } from '../services/stytchService';
 import type { UserService } from '../services/userService';
 
 export type AppContext = {
@@ -10,6 +11,9 @@ export type AppContext = {
   };
   Variables: {
     config: AppEnv;
+    stytchService: StytchService;
     userService: UserService;
+    stytchSession?: StytchSession;
+    stytchUser?: StytchUserProfile;
   };
 };

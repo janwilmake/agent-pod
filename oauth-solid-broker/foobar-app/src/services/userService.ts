@@ -1,4 +1,3 @@
-import type { AppEnv } from '../config/env';
 import { UserRepository } from '../repositories/userRepository';
 import type { CreateUserRequest, UserRecord } from '../schemas/userSchema';
 import { StytchService } from './stytchService';
@@ -23,8 +22,7 @@ export class UserService {
   }
 }
 
-export function buildUserService(config: AppEnv): UserService {
-  const stytchService = new StytchService(config);
+export function buildUserService(stytchService: StytchService): UserService {
   const repository = new UserRepository();
   return new UserService(stytchService, repository);
 }

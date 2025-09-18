@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { resolveStytchBaseUrl } from '../config/env';
 import type { AppEnv } from '../config/env';
+import type { PasswordAuthRequest } from '../schemas/authSchema';
 import type { CreateUserRequest } from '../schemas/userSchema';
 import { AppError } from '../utils/errors';
 
@@ -21,55 +22,105 @@ const stytchErrorSchema = z
   })
   .passthrough();
 
+const stytchEmailSchema = z.object({
+  email: z.string().email(),
+  email_id: z.string(),
+  verified: z.boolean(),
+});
+
+const stytchNameSchema = z
+  .object({
+    first_name: z.string().optional().default(''),
+    last_name: z.string().optional().default(''),
+    middle_name: z.string().optional().default(''),
+  })
+  .passthrough();
+
+const stytchUserSchema = z
+  .object({
+    user_id: z.string(),
+    name: stytchNameSchema.optional(),
+    emails: z.array(stytchEmailSchema).optional(),
+    trusted_metadata: z.record(z.unknown()).optional(),
+    untrusted_metadata: z.record(z.unknown()).optional(),
+  })
+  .passthrough();
+
+const stytchSessionSchema = z
+  .object({
+    session_id: z.string(),
+    user_id: z.string(),
+    started_at: z.string().optional(),
+    last_accessed_at: z.string().optional(),
+    expires_at: z.string(),
+    attributes: z.record(z.unknown()).optional(),
+    authentication_factors: z.array(z.record(z.unknown())).optional(),
+  })
+  .passthrough();
+
+const stytchCreateUserResponseSchema = z
+  .object({
+    user_id: z.string(),
+    user: stytchUserSchema.optional(),
+  })
+  .passthrough();
+
 const stytchPasswordCreateResponseSchema = z
   .object({
+    request_id: z.string(),
     status_code: z.number(),
     email_id: z.string(),
+    session_token: z.string().nullable().optional(),
+    session_jwt: z.string().nullable().optional(),
+    session: stytchSessionSchema.nullable().optional(),
     user_id: z.string(),
-    user: z
-      .object({
-        user_id: z.string(),
-        name: z
-          .object({
-            first_name: z.string().optional().default(''),
-            last_name: z.string().optional().default(''),
-            middle_name: z.string().optional().default(''),
-          })
-          .passthrough(),
-        emails: z
-          .array(
-            z.object({
-              email: z.string().email(),
-              email_id: z.string(),
-              verified: z.boolean(),
-            }),
-          )
-          .optional(),
-      })
-      .passthrough(),
+    user: stytchUserSchema,
   })
   .passthrough();
 
-const stytchUpdateUserResponseSchema = z
+const stytchPasswordAuthenticateResponseSchema = z
   .object({
+    request_id: z.string(),
+    status_code: z.number(),
+    session_token: z.string(),
+    session_jwt: z.string(),
+    session: stytchSessionSchema,
     user_id: z.string(),
-    user: z
-      .object({
-        user_id: z.string(),
-        name: z
-          .object({
-            first_name: z.string().optional().default(''),
-            last_name: z.string().optional().default(''),
-            middle_name: z.string().optional().default(''),
-          })
-          .passthrough(),
-      })
-      .passthrough(),
+    user: stytchUserSchema,
   })
   .passthrough();
 
-export type StytchUser = {
-  user_id: string;
+const stytchSessionAuthenticateResponseSchema = z
+  .object({
+    request_id: z.string(),
+    session: stytchSessionSchema.nullable().optional(),
+    session_jwt: z.string().optional().nullable(),
+    session_token: z.string().optional().nullable(),
+    user: stytchUserSchema,
+    user_id: z.string().optional(),
+  })
+  .passthrough();
+
+export type StytchUserProfile = z.infer<typeof stytchUserSchema>;
+export type StytchSession = z.infer<typeof stytchSessionSchema>;
+
+export type SessionCredential = {
+  session_jwt?: string;
+  session_token?: string;
+};
+
+export type PasswordAuthenticationResult = {
+  sessionToken: string;
+  sessionJwt: string;
+  session: StytchSession;
+  user: StytchUserProfile;
+};
+
+export type SessionAuthenticationResult = {
+  session: StytchSession;
+  user: StytchUserProfile;
+  sessionToken?: string;
+  sessionJwt?: string;
 };
 
 type ParsedName = {
@@ -80,7 +131,7 @@ type ParsedName = {
 export class StytchService {
   constructor(private readonly config: AppEnv) {}
 
-  async createUser(input: CreateUserRequest): Promise<StytchUser> {
+  async createUser(input: CreateUserRequest): Promise<{ user_id: string }> {
     const baseUrl = resolveStytchBaseUrl(this.config);
     const credentials = buildBasicAuth(this.config);
 
@@ -111,28 +162,114 @@ export class StytchService {
     const name = parseName(input.name);
 
     if (name) {
-      const updateResponse = await this.request(
-        `${baseUrl}/users/${encodeURIComponent(user_id)}`,
-        {
-          method: 'PUT',
-          headers: {
-            'content-type': 'application/json',
-            authorization: credentials,
-          },
-          body: JSON.stringify({ name }),
-        },
-      );
-
-      const updateResult = stytchUpdateUserResponseSchema.safeParse(updateResponse);
-      if (!updateResult.success) {
-        throw new AppError('Unexpected response from Stytch while updating user name', 502, {
-          response: updateResponse,
-          error: updateResult.error.flatten(),
-        });
-      }
+      await this.updateUserName(baseUrl, credentials, user_id, name);
     }
 
     return { user_id };
+  }
+
+  async authenticatePassword(input: PasswordAuthRequest): Promise<PasswordAuthenticationResult> {
+    const baseUrl = resolveStytchBaseUrl(this.config);
+    const credentials = buildBasicAuth(this.config);
+
+    const payload = {
+      email: input.email,
+      password: input.password,
+      session_duration_minutes: input.sessionDurationMinutes ?? 60,
+    };
+
+    const response = await this.request(`${baseUrl}/passwords/authenticate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: credentials,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const result = stytchPasswordAuthenticateResponseSchema.safeParse(response);
+    if (!result.success) {
+      throw new AppError('Unexpected response from Stytch while authenticating password', 502, {
+        response,
+        error: result.error.flatten(),
+      });
+    }
+
+    return {
+      sessionToken: result.data.session_token,
+      sessionJwt: result.data.session_jwt,
+      session: result.data.session,
+      user: result.data.user,
+    };
+  }
+
+  async authenticateSession(credential: SessionCredential): Promise<SessionAuthenticationResult> {
+    if (!credential.session_jwt && !credential.session_token) {
+      throw new AppError('Missing session credential', 401);
+    }
+
+    const baseUrl = resolveStytchBaseUrl(this.config);
+    const credentials = buildBasicAuth(this.config);
+    const body = credential.session_jwt
+      ? { session_jwt: credential.session_jwt }
+      : { session_token: credential.session_token };
+
+    const response = await this.request(`${baseUrl}/sessions/authenticate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: credentials,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const result = stytchSessionAuthenticateResponseSchema.safeParse(response);
+    if (!result.success) {
+      throw new AppError('Unexpected response from Stytch while authenticating session', 502, {
+        response,
+        error: result.error.flatten(),
+      });
+    }
+
+    if (!result.data.session) {
+      throw new AppError('Stytch session authentication succeeded without session payload', 502, {
+        response,
+      });
+    }
+
+    return {
+      session: result.data.session,
+      user: result.data.user,
+      sessionJwt: result.data.session_jwt ?? undefined,
+      sessionToken: result.data.session_token ?? undefined,
+    };
+  }
+
+  private async updateUserName(
+    baseUrl: string,
+    credentials: string,
+    userId: string,
+    name: ParsedName,
+  ): Promise<void> {
+    const updateResponse = await this.request(
+      `${baseUrl}/users/${encodeURIComponent(userId)}`,
+      {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: credentials,
+        },
+        body: JSON.stringify({ name }),
+      },
+    );
+
+    const updateResult = stytchCreateUserResponseSchema.safeParse(updateResponse);
+    if (!updateResult.success) {
+      throw new AppError('Unexpected response from Stytch while updating user name', 502, {
+        response: updateResponse,
+        error: updateResult.error.flatten(),
+      });
+    }
   }
 
   private async request(url: string, init: RequestInit): Promise<unknown> {

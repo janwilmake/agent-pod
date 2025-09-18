@@ -4,6 +4,9 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
 import { loadConfig } from './config/env';
 import usersRoutes from './routes/users';
+import authRoutes from './routes/auth';
+import postsRoutes from './routes/posts';
+import { StytchService } from './services/stytchService';
 import { buildUserService } from './services/userService';
 import type { AppContext } from './types/app';
 import { AppError } from './utils/errors';
@@ -12,8 +15,11 @@ const app = new Hono<AppContext>();
 
 app.use('*', async (c, next) => {
   const config = loadConfig(c.env);
+  const stytchService = new StytchService(config);
+
   c.set('config', config);
-  c.set('userService', buildUserService(config));
+  c.set('stytchService', stytchService);
+  c.set('userService', buildUserService(stytchService));
   await next();
 });
 
@@ -27,6 +33,8 @@ app.get('/', (c) =>
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
 app.route('/api/users', usersRoutes);
+app.route('/api/auth', authRoutes);
+app.route('/api/posts', postsRoutes);
 
 app.notFound((c) => c.json({ error: 'Not Found' }, asStatus(404)));
 
