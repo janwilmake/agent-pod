@@ -3,6 +3,14 @@ import type { Env } from "./types";
 
 const HTML_HEADERS = { "content-type": "text/html; charset=UTF-8" } as const;
 
+type OAuthUserRecord = {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  createdAt: string;
+};
+
 function layout(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -100,6 +108,66 @@ export function buildUiApp() {
 
   app.get("/health", async (c) => c.text("ok"));
 
+  app.get("/admin/users", async (c) => {
+    const list = await c.env.OAUTH_KV.list({ prefix: "user:", limit: 100 });
+    const users = [] as Array<Omit<OAuthUserRecord, "passwordHash">>;
+    for (const entry of list.keys) {
+      const record = await c.env.OAUTH_KV.get<OAuthUserRecord>(entry.name, { type: "json" });
+      if (record) {
+        users.push({ id: record.id, name: record.name, email: record.email, createdAt: record.createdAt });
+      }
+    }
+    users.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return c.json({ ok: true, count: users.length, users });
+  });
+
+  app.post("/admin/users", async (c) => {
+    let payload: any;
+    try {
+      payload = await c.req.json();
+    } catch {
+      return c.json({ ok: false, error: "invalid_json" }, 400);
+    }
+
+    const userId = String(payload?.userId || crypto.randomUUID()).trim();
+    const name = String(payload?.name || "").trim() || "Foobar User";
+    const email = String(payload?.email || "").trim().toLowerCase();
+    const password = String(payload?.password || "");
+
+    const errors: string[] = [];
+    if (!email) errors.push("Email is required.");
+    const emailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+    if (email && !emailPattern.test(email)) errors.push("Email must be valid.");
+    if (!password) errors.push("Password is required.");
+
+    const emailKey = `user-email:${email}`;
+    const userKey = `user:${userId}`;
+    const existingByEmail = email ? await c.env.OAUTH_KV.get(emailKey) : null;
+    if (existingByEmail) {
+      errors.push("An account already exists for this email.");
+    }
+    const existingById = await c.env.OAUTH_KV.get(userKey);
+    if (existingById) {
+      errors.push("User ID already exists.");
+    }
+
+    if (errors.length) {
+      return c.json({ ok: false, error: "validation_failed", errors }, 422);
+    }
+
+    const record: OAuthUserRecord = {
+      id: userId,
+      name,
+      email,
+      passwordHash: await hashSecret(password),
+      createdAt: new Date().toISOString(),
+    };
+    await c.env.OAUTH_KV.put(userKey, JSON.stringify(record));
+    await c.env.OAUTH_KV.put(emailKey, userId);
+
+    return c.json({ ok: true, user: { id: userId, name, email } }, 201);
+  });
+
   app.get("/authorize", async (c) => {
     const info = await c.env.OAUTH_PROVIDER.parseAuthRequest(c.req.raw);
     const clientInfo = await c.env.OAUTH_PROVIDER.lookupClient(info.clientId);
@@ -141,3 +209,7 @@ export function buildUiApp() {
   return app;
 }
 
+async function hashSecret(secret: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
