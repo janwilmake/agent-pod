@@ -7,7 +7,10 @@
     "dev": "wrangler dev",
     "dev:logged": "mkdir -p ../e2e/logs && wrangler dev 2>&1 | tee ../e2e/logs/foobar-app.log",
     "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrate": "dotenv -e .dev.vars -- npx prisma migrate dev --schema ./src/prisma/schema.prisma",
+    "generate": "dotenv -e .dev.vars -- npx prisma generate --no-engine --schema ./src/prisma/schema.prisma",
+    "studio": "dotenv -e .dev.vars -- npx prisma studio --schema ./src/prisma/schema.prisma"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
@@ -18,6 +21,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250129.0",
+    "dotenv-cli": "^10.0.0",
     "typescript": "^5.3.3",
     "wrangler": "^3.87.0"
   }

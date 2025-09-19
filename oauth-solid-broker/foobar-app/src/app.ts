@@ -3,10 +3,13 @@ import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
 import { loadConfig } from './config/env';
+import { getPrismaClient } from './db';
 import usersRoutes from './routes/users';
 import authRoutes from './routes/auth';
 import postsRoutes from './routes/posts';
+import { PostRepository } from './repositories/postRepository';
 import { StytchService } from './services/stytchService';
+import { buildPostService } from './services/postService';
 import { buildUserService } from './services/userService';
 import type { AppContext } from './types/app';
 import { AppError } from './utils/errors';
@@ -15,11 +18,16 @@ const app = new Hono<AppContext>();
 
 app.use('*', async (c, next) => {
   const config = loadConfig(c.env);
+  const prisma = getPrismaClient(config.DATABASE_URL);
   const stytchService = new StytchService(config);
+  const { userService, userRepository } = buildUserService(prisma, stytchService);
+  const postService = buildPostService(new PostRepository(prisma), userRepository);
 
   c.set('config', config);
+  c.set('prisma', prisma);
   c.set('stytchService', stytchService);
-  c.set('userService', buildUserService(stytchService));
+  c.set('userService', userService);
+  c.set('postService', postService);
   await next();
 });
 

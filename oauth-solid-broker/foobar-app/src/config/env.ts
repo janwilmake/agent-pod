@@ -5,6 +5,7 @@ const envSchema = z.object({
   STYTCH_SECRET: z.string().min(1, 'STYTCH_SECRET is required'),
   STYTCH_ENV: z.enum(['test', 'live']).default('test'),
   STYTCH_BASE_URL: z.string().url().optional(),
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

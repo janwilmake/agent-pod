@@ -1,5 +1,7 @@
+import type { AcceleratedPrismaClient } from '../db';
 import { UserRepository } from '../repositories/userRepository';
 import type { CreateUserRequest, UserRecord } from '../schemas/userSchema';
+import { AppError } from '../utils/errors';
 import { StytchService } from './stytchService';
 
 export class UserService {
@@ -13,16 +15,31 @@ export class UserService {
 
     const record = await this.repository.createUser({
       ...input,
-      stytchUserId: stytchUser.user_id,
+      authId: stytchUser.user_id,
     });
 
     // TODO: Provision additional resources for the user (e.g. Solid pod, OAuth clients)
 
     return record;
   }
+
+  async getUserByAuthId(authId: string): Promise<UserRecord> {
+    const user = await this.repository.findByAuthId(authId);
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    return user;
+  }
 }
 
-export function buildUserService(stytchService: StytchService): UserService {
-  const repository = new UserRepository();
-  return new UserService(stytchService, repository);
+export function buildUserService(
+  prisma: AcceleratedPrismaClient,
+  stytchService: StytchService,
+): { userService: UserService; userRepository: UserRepository } {
+  const repository = new UserRepository(prisma);
+  return {
+    userService: new UserService(stytchService, repository),
+    userRepository: repository,
+  };
 }

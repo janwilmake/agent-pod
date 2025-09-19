@@ -46,8 +46,8 @@ export type CreateUserRequest = z.infer<typeof createUserRequestSchema>;
 export const userRecordSchema = z.object({
   id: z.string(),
   email: z.string().email(),
-  name: z.string(),
-  stytchUserId: z.string(),
+  name: z.string().nullable(),
+  authId: z.string(),
   createdAt: z.string().datetime(),
 });
 
