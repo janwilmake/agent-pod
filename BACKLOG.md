@@ -1,0 +1,11 @@
+# Topics
+
+- **Business model & Enterprise offering**
+
+- **Efficiency problem** How to use Cloudflare tech to enable a good SOLID server without degradation/limitation of app performance? Can we leverage DO SQL more, or of not, how do we design apps that are maximally efficient (is there an alternative to the SQL indexing in the file system?)
+
+- **Onboarding problem** How to ensure that apps we make intended for SOLID are able to easily provision a temporary POD when onboarding, and allow to then transfer this data to their own server
+
+- **Sync from local fs** - can we make a dropbox-like app that syncs a certain folder to the pod server? this makes it much more interoperable with things like ffmpeg or any other tools you might have on your PC (and your own files)
+
+- **Using Stytch** would make it more adoptable for other startups since it's more prominent in the oauth space. How do we create a oauth provider that hooks into _ANY_ SOLID server?

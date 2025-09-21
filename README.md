@@ -67,10 +67,7 @@ To work towards an MVP that is viable open source:
 ## Demo ideas (that could go viral) - TBD
 
 - Multiple apps using the same X Network Data; start with https://github.com/janwilmake/x-crm-mcp (app 1), create app that uses AI to enrich this further (app 2)
+
 - Get all browser history synced (app 1) and have simple app that accesses it using MCP (app 2)
+
 - Efficient sync screen-recording to fs (app 1) and have simple app that uses ai to analyze it (app 2)
-
-## Questions
-
-- Business model & Enterprise offering
-- How to use Cloudflare tech to enable a good SOLID server without degradation/limitation of app performance? Can we leverage DO SQL more?
