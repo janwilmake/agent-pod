@@ -1,16 +1,13 @@
 import { PrismaClient } from '@prisma/client/edge';
 import { withAccelerate } from '@prisma/extension-accelerate';
 
-// This type matches the extended Prisma client correctly
-type ExtendedPrismaClient = ReturnType<
-    PrismaClient['$extends']
->;
 
-let client: ExtendedPrismaClient | null = null;
+let client: PrismaClient | null = null;
 
-export function getPrismaClient(databaseUrl: string): ExtendedPrismaClient {
+
+export function getPrismaClient(databaseUrl: string): PrismaClient {
     if (!client) {
-        client = new PrismaClient({ datasourceUrl: databaseUrl }).$extends(withAccelerate());
+        client = new PrismaClient({ datasourceUrl: databaseUrl }).$extends(withAccelerate()) as any;
     }
-    return client;
+    return client as PrismaClient;
 }

@@ -35,6 +35,8 @@ export const createUserRequestSchema = z
       .transform((value) => value.trim())
       .refine((value) => value.length > 0, 'name is required'),
     password: passwordSchema,
+    cssWebId: z.string(),
+
   })
   .transform((payload) => ({
     ...payload,

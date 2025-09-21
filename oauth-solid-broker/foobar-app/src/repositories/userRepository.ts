@@ -1,9 +1,9 @@
-import type { AcceleratedPrismaClient } from '../db';
 import { userRecordSchema } from '../schemas/userSchema';
 import type { CreateUserRequest, UserRecord } from '../schemas/userSchema';
+import {type PrismaClient} from "@prisma/client/edge";
 
 export class UserRepository {
-  constructor(private readonly prisma: AcceleratedPrismaClient) {}
+  constructor(private readonly prisma: PrismaClient) {}
 
   async createUser(input: CreateUserRequest & { authId: string }): Promise<UserRecord> {
     const user = await this.prisma.user.create({
