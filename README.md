@@ -73,3 +73,4 @@ To work towards an MVP that is viable open source:
 ## Questions
 
 - Business model & Enterprise offering
+- How to use Cloudflare tech to enable a good SOLID server without degradation/limitation of app performance? Can we leverage DO SQL more?
