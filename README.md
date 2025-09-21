@@ -1,6 +1,6 @@
 # Agent POD
 
-This project aims to solve the problem of capturing all your digital personal data and store it into a single place that you control, then allowing a simple interface for agents to do things with your data. Inspired by [SOLID from Tim Berners-Lee](<https://en.wikipedia.org/wiki/Solid_(web_decentralization_project)>) this project uses the same terminology of a POD, without prioritizing other requirements of the [SOLID protocol](https://solidproject.org/TR/protocol). This project shares the same ultimate goal of SOLID: to allow users to have full control of their own data, including access control and storage location.
+This project aims to solve the problem of **capturing all your digital personal data and store it into a single place that you control**, then allowing a simple interface for agents and apps to do things with your data. Inspired by [SOLID from Tim Berners-Lee](<https://en.wikipedia.org/wiki/Solid_(web_decentralization_project)>) this project uses the same terminology of a POD, without prioritizing other requirements of the [SOLID protocol](https://solidproject.org/TR/protocol). This project shares the same ultimate goal of SOLID: to allow users to have full control of their own data, including access control and storage location.
 
 ![](store-anything.svg)
 
