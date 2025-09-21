@@ -55,4 +55,17 @@ Coming Soon!
 
 # Let's make this real
 
-Let me know if you want to be involved!
+Let me know if you want to be involved! Seeking contributors who share a common goal of **capturing all your digital personal data and store it into a single place that you control** and making it super easy to build secure and capable apps that create utility with this shared data.
+
+## MVP
+
+To work towards an MVP that is viable open source:
+
+- Instruct users to self-host this on their own Cloudflare
+- Offer a clear path to creating pod servers that can be hosted anywhere
+
+## Demo ideas (that could go viral) - TBD
+
+- Multiple apps using the same X Network Data; start with https://github.com/janwilmake/x-crm-mcp (app 1), create app that uses AI to enrich this further (app 2)
+- Get all browser history synced (app 1) and have simple app that accesses it using MCP (app 2)
+- Efficient sync screen-recording to fs (app 1) and have simple app that uses ai to analyze it (app 2)
