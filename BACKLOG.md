@@ -9,3 +9,5 @@
 - **Sync from local fs** - can we make a dropbox-like app that syncs a certain folder to the pod server? this makes it much more interoperable with things like ffmpeg or any other tools you might have on your PC (and your own files)
 
 - **Using Stytch** would make it more adoptable for other startups since it's more prominent in the oauth space. How do we create a oauth provider that hooks into _ANY_ SOLID server?
+
+- **Making it easy to integrate fs-based apps/clis with SOLID** could really be useful because the ecosystem for fs is grand. However if we build for solid, the inner working will be totally different. can we design an API that looks alike and potentially is 'swappable'?
