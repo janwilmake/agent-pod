@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/wrangler@latest/config-schema.json",
+  "name": "pod-terminal",
+  "main": "main.ts",
+  "compatibility_date": "2025-06-05",
+  "dev": { "port": 3001 },
+  "assets": { "directory": "./" },
+  "routes": [{ "pattern": "terminal.agent-pod.com", "custom_domain": true }],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "AGENT_POD_SERVER": "https://server.agent-pod.com"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "9d718f5f36484882bf14c13d0ccca191"
+    }
+  ]
+}

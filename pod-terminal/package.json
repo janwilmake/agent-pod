@@ -1,0 +1,12 @@
+{
+  "name": "pod-terminal",
+  "version": "1.0.0",
+  "description": "XYTerm - A terminal client for Agent Pod",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260203.0"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  }
+}

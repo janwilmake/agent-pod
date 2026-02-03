@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XYTerm - Terminal</title>
+    <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>💻</text></svg>" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg-color: #0a0a0a;
+            --terminal-bg: #0d0d0d;
+            --text-color: #e0e0e0;
+            --prompt-color: #00ff88;
+            --error-color: #ff5f56;
+            --info-color: #00d4ff;
+            --warning-color: #ffbd2e;
+            --border-color: #2a2a2a;
+            --selection-bg: rgba(0, 255, 136, 0.2);
+            --scrollbar-bg: #1a1a1a;
+            --scrollbar-thumb: #3a3a3a;
+        }
+
+        body {
+            font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', Monaco, 'Courier New', monospace;
+            height: 100vh;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        .app-layout {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .toolbar {
+            background: #111;
+            border-bottom: 1px solid var(--border-color);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--prompt-color);
+        }
+
+        .toolbar-btn {
+            background: #222;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-family: inherit;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .toolbar-btn:hover {
+            background: #333;
+            border-color: #444;
+        }
+
+        .toolbar-btn.active {
+            background: var(--prompt-color);
+            color: #0a0a0a;
+            border-color: var(--prompt-color);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .user-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+        }
+
+        .terminals-container {
+            flex: 1;
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
+        }
+
+        .terminal-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--terminal-bg);
+            position: relative;
+            min-width: 200px;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .terminal-pane:last-child {
+            border-right: none;
+        }
+
+        .terminal-header {
+            background: #151515;
+            padding: 6px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 11px;
+        }
+
+        .terminal-title {
+            color: #888;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .terminal-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        .terminal-action-btn {
+            background: none;
+            border: none;
+            color: #666;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .terminal-action-btn:hover {
+            background: #333;
+            color: #fff;
+        }
+
+        .terminal-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .terminal-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .terminal-content::-webkit-scrollbar-track {
+            background: var(--scrollbar-bg);
+        }
+
+        .terminal-content::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 4px;
+        }
+
+        .terminal-line {
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .terminal-line.output {
+            color: #b0b0b0;
+        }
+
+        .terminal-line.error {
+            color: var(--error-color);
+        }
+
+        .terminal-line.info {
+            color: var(--info-color);
+        }
+
+        .terminal-line.success {
+            color: var(--prompt-color);
+        }
+
+        .terminal-line.warning {
+            color: var(--warning-color);
+        }
+
+        .input-line,
+        .command-history-line {
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .prompt {
+            color: var(--prompt-color);
+            margin-right: 8px;
+            white-space: nowrap;
+        }
+
+        .terminal-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-color);
+            font-family: inherit;
+            font-size: 13px;
+            outline: none;
+            resize: none;
+            line-height: 1.5;
+        }
+
+        .terminal-input::selection {
+            background: var(--selection-bg);
+        }
+
+        .resize-handle {
+            width: 4px;
+            background: var(--border-color);
+            cursor: ew-resize;
+            transition: background 0.2s;
+        }
+
+        .resize-handle:hover {
+            background: var(--prompt-color);
+        }
+
+        .help-table {
+            margin: 8px 0;
+        }
+
+        .help-row {
+            display: flex;
+            gap: 16px;
+            padding: 2px 0;
+        }
+
+        .help-cmd {
+            color: var(--info-color);
+            min-width: 180px;
+        }
+
+        .help-desc {
+            color: #888;
+        }
+
+        .file-listing {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 4px 16px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .file-icon {
+            width: 16px;
+            text-align: center;
+        }
+
+        .file-name {
+            color: var(--text-color);
+        }
+
+        .file-name.folder {
+            color: var(--info-color);
+        }
+
+        .ls-long {
+            font-size: 12px;
+        }
+
+        .ls-long-item {
+            display: grid;
+            grid-template-columns: 80px 60px 1fr;
+            gap: 16px;
+        }
+
+        .ls-size {
+            text-align: right;
+            color: #888;
+        }
+
+        .ls-date {
+            color: #666;
+        }
+
+        .status-bar {
+            background: #111;
+            border-top: 1px solid var(--border-color);
+            padding: 4px 16px;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            color: #666;
+        }
+
+        .status-left {
+            display: flex;
+            gap: 16px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-layout">
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <span class="logo">&gt;_XYTerm</span>
+                <button class="toolbar-btn" onclick="app.addTerminal()" title="Add terminal (Ctrl+Shift+N)">+ New
+                    Terminal</button>
+                <button class="toolbar-btn" onclick="app.clearAll()" title="Clear all terminals">Clear All</button>
+            </div>
+            <div class="toolbar-right">
+                <div class="user-info">
+                    <img class="user-avatar" id="userAvatar" src="{{USER_AVATAR}}" alt="">
+                    <span id="userName">{{USER_NAME}}</span>
+                </div>
+                <button class="toolbar-btn" onclick="window.location.href='/logout'">Logout</button>
+            </div>
+        </div>
+
+        <div class="terminals-container" id="terminalsContainer">
+            <!-- Terminals will be added here -->
+        </div>
+
+        <div class="status-bar">
+            <div class="status-left">
+                <span id="terminalCount">1 terminal</span>
+                <span>Type 'help' for commands</span>
+            </div>
+            <span>Agent Pod: {{AGENT_POD_SERVER}}</span>
+        </div>
+    </div>
+
+    <script>
+        const CONFIG = {
+            agentPodServer: "{{AGENT_POD_SERVER}}",
+            accessToken: "{{ACCESS_TOKEN}}",
+            username: "{{USERNAME}}"
+        };
+
+        class Terminal {
+            constructor(id, app) {
+                this.id = id;
+                this.app = app;
+                this.cwd = '/' + CONFIG.username;
+                this.history = [];
+                this.historyIndex = -1;
+                this.element = null;
+                this.inputElement = null;
+                this.contentElement = null;
+            }
+
+            render() {
+                const pane = document.createElement('div');
+                pane.className = 'terminal-pane';
+                pane.id = `terminal-${this.id}`;
+                pane.innerHTML = `
+                    <div class="terminal-header">
+                        <div class="terminal-title">
+                            <span>⬢</span>
+                            <span class="terminal-cwd">${this.cwd}</span>
+                        </div>
+                        <div class="terminal-actions">
+                            <button class="terminal-action-btn" onclick="app.clearTerminal(${this.id})" title="Clear">⌫</button>
+                            <button class="terminal-action-btn" onclick="app.closeTerminal(${this.id})" title="Close">✕</button>
+                        </div>
+                    </div>
+                    <div class="terminal-content" onclick="this.querySelector('input')?.focus()">
+                        <div class="terminal-line info">Welcome to XYTerm! Type 'help' for available commands.</div>
+                        <div class="terminal-line info">Connected as ${CONFIG.username}</div>
+                        <div class="terminal-line"></div>
+                        <div class="input-line">
+                            <span class="prompt">${this.getPrompt()}</span>
+                            <input type="text" class="terminal-input" autofocus spellcheck="false" autocomplete="off">
+                        </div>
+                    </div>
+                `;
+
+                this.element = pane;
+                this.contentElement = pane.querySelector('.terminal-content');
+                this.inputElement = pane.querySelector('.terminal-input');
+
+                this.inputElement.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+                return pane;
+            }
+
+            getPrompt() {
+                const shortPath = this.cwd.replace('/' + CONFIG.username, '~');
+                return `${shortPath} $`;
+            }
+
+            updatePrompt() {
+                const promptEl = this.contentElement.querySelector('.input-line .prompt');
+                if (promptEl) {
+                    promptEl.textContent = this.getPrompt();
+                }
+                const cwdEl = this.element.querySelector('.terminal-cwd');
+                if (cwdEl) {
+                    cwdEl.textContent = this.cwd;
+                }
+            }
+
+            handleKeyDown(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const command = this.inputElement.value.trim();
+                    if (command) {
+                        this.history.push(command);
+                        this.historyIndex = this.history.length;
+                    }
+                    this.executeCommand(command);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (this.historyIndex > 0) {
+                        this.historyIndex--;
+                        this.inputElement.value = this.history[this.historyIndex];
+                    }
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (this.historyIndex < this.history.length - 1) {
+                        this.historyIndex++;
+                        this.inputElement.value = this.history[this.historyIndex];
+                    } else {
+                        this.historyIndex = this.history.length;
+                        this.inputElement.value = '';
+                    }
+                } else if (e.key === 'Tab') {
+                    e.preventDefault();
+                    this.autocomplete();
+                } else if (e.key === 'c' && e.ctrlKey) {
+                    e.preventDefault();
+                    this.writeLine('^C', 'error');
+                    this.newInputLine();
+                } else if (e.key === 'l' && e.ctrlKey) {
+                    e.preventDefault();
+                    this.clear();
+                }
+            }
+
+            async autocomplete() {
+                const input = this.inputElement.value;
+                const parts = input.split(/\s+/);
+                const lastPart = parts[parts.length - 1] || '';
+
+                // Determine the directory to search in
+                let searchDir = this.cwd;
+                let searchPrefix = lastPart;
+
+                if (lastPart.includes('/')) {
+                    const lastSlash = lastPart.lastIndexOf('/');
+                    const dirPart = lastPart.substring(0, lastSlash) || '/';
+                    searchPrefix = lastPart.substring(lastSlash + 1);
+                    searchDir = this.resolvePath(dirPart);
+                }
+
+                try {
+                    const files = await this.app.listFiles(searchDir);
+                    const matches = files.filter(f => {
+                        const name = f.path.split('/').pop();
+                        return name.toLowerCase().startsWith(searchPrefix.toLowerCase());
+                    });
+
+                    if (matches.length === 1) {
+                        const match = matches[0];
+                        const name = match.path.split('/').pop();
+                        const suffix = match.type === 'folder' ? '/' : '';
+
+                        if (lastPart.includes('/')) {
+                            const lastSlash = lastPart.lastIndexOf('/');
+                            parts[parts.length - 1] = lastPart.substring(0, lastSlash + 1) + name + suffix;
+                        } else {
+                            parts[parts.length - 1] = name + suffix;
+                        }
+                        this.inputElement.value = parts.join(' ');
+                    } else if (matches.length > 1) {
+                        this.writeLine(this.inputElement.value);
+                        const names = matches.map(f => f.path.split('/').pop() + (f.type === 'folder' ? '/' : ''));
+                        this.writeLine(names.join('  '), 'output');
+                        this.newInputLine();
+                    }
+                } catch (e) {
+                    // Ignore autocomplete errors
+                }
+            }
+
+            async executeCommand(command) {
+                // Show the command that was typed
+                const inputLine = this.contentElement.querySelector('.input-line');
+                inputLine.innerHTML = `<span class="prompt">${this.getPrompt()}</span><span>${this.escapeHtml(command)}</span>`;
+
+                if (!command) {
+                    this.newInputLine();
+                    return;
+                }
+
+                const args = this.parseCommand(command);
+                const cmd = args[0]?.toLowerCase();
+
+                try {
+                    switch (cmd) {
+                        case 'help':
+                            this.showHelp();
+                            break;
+                        case 'clear':
+                        case 'cls':
+                            this.clear();
+                            return;
+                        case 'ls':
+                        case 'dir':
+                            await this.cmdLs(args.slice(1));
+                            break;
+                        case 'cd':
+                            await this.cmdCd(args[1]);
+                            break;
+                        case 'pwd':
+                            this.writeLine(this.cwd, 'output');
+                            break;
+                        case 'cat':
+                        case 'type':
+                            await this.cmdCat(args.slice(1));
+                            break;
+                        case 'head':
+                            await this.cmdHead(args.slice(1));
+                            break;
+                        case 'tail':
+                            await this.cmdTail(args.slice(1));
+                            break;
+                        case 'mkdir':
+                            await this.cmdMkdir(args[1]);
+                            break;
+                        case 'touch':
+                            await this.cmdTouch(args[1]);
+                            break;
+                        case 'rm':
+                            await this.cmdRm(args.slice(1));
+                            break;
+                        case 'rmdir':
+                            await this.cmdRmdir(args[1]);
+                            break;
+                        case 'cp':
+                        case 'copy':
+                            await this.cmdCp(args[1], args[2]);
+                            break;
+                        case 'mv':
+                        case 'move':
+                        case 'rename':
+                            await this.cmdMv(args[1], args[2]);
+                            break;
+                        case 'echo':
+                            this.writeLine(args.slice(1).join(' '), 'output');
+                            break;
+                        case 'whoami':
+                            this.writeLine(CONFIG.username, 'output');
+                            break;
+                        case 'date':
+                            this.writeLine(new Date().toString(), 'output');
+                            break;
+                        case 'find':
+                            await this.cmdFind(args.slice(1));
+                            break;
+                        case 'grep':
+                            await this.cmdGrep(args.slice(1));
+                            break;
+                        case 'wc':
+                            await this.cmdWc(args.slice(1));
+                            break;
+                        case 'tree':
+                            await this.cmdTree(args[1]);
+                            break;
+                        case 'stat':
+                            await this.cmdStat(args[1]);
+                            break;
+                        case 'write':
+                        case 'edit':
+                            await this.cmdWrite(args[1], args.slice(2).join(' '));
+                            break;
+                        case 'append':
+                            await this.cmdAppend(args[1], args.slice(2).join(' '));
+                            break;
+                        case 'history':
+                            this.cmdHistory();
+                            break;
+                        case 'exit':
+                        case 'quit':
+                            this.app.closeTerminal(this.id);
+                            return;
+                        default:
+                            this.writeLine(`Command not found: ${cmd}`, 'error');
+                            this.writeLine("Type 'help' for available commands", 'info');
+                    }
+                } catch (e) {
+                    this.writeLine(`Error: ${e.message}`, 'error');
+                }
+
+                this.newInputLine();
+            }
+
+            parseCommand(command) {
+                const args = [];
+                let current = '';
+                let inQuote = false;
+                let quoteChar = '';
+
+                for (let i = 0; i < command.length; i++) {
+                    const char = command[i];
+
+                    if (inQuote) {
+                        if (char === quoteChar) {
+                            inQuote = false;
+                        } else {
+                            current += char;
+                        }
+                    } else if (char === '"' || char === "'") {
+                        inQuote = true;
+                        quoteChar = char;
+                    } else if (char === ' ') {
+                        if (current) {
+                            args.push(current);
+                            current = '';
+                        }
+                    } else {
+                        current += char;
+                    }
+                }
+
+                if (current) {
+                    args.push(current);
+                }
+
+                return args;
+            }
+
+            showHelp() {
+                const commands = [
+                    ['ls [-la] [path]', 'List directory contents'],
+                    ['cd <path>', 'Change directory'],
+                    ['pwd', 'Print working directory'],
+                    ['cat <file>', 'Display file contents'],
+                    ['head [-n N] <file>', 'Show first N lines (default 10)'],
+                    ['tail [-n N] <file>', 'Show last N lines (default 10)'],
+                    ['mkdir <name>', 'Create directory'],
+                    ['touch <name>', 'Create empty file'],
+                    ['rm [-r] <path>', 'Remove file or directory (-r for recursive)'],
+                    ['rmdir <path>', 'Remove empty directory'],
+                    ['cp <src> <dest>', 'Copy file or directory'],
+                    ['mv <src> <dest>', 'Move/rename file or directory'],
+                    ['find <pattern>', 'Find files matching pattern'],
+                    ['grep <pattern> <file>', 'Search for pattern in file'],
+                    ['wc <file>', 'Count lines, words, chars'],
+                    ['tree [path]', 'Show directory tree'],
+                    ['stat <path>', 'Show file information'],
+                    ['write <file> <content>', 'Write content to file'],
+                    ['append <file> <content>', 'Append content to file'],
+                    ['echo <text>', 'Print text'],
+                    ['whoami', 'Show current user'],
+                    ['date', 'Show current date/time'],
+                    ['history', 'Show command history'],
+                    ['clear', 'Clear terminal'],
+                    ['exit', 'Close this terminal'],
+                ];
+
+                this.writeLine('Available commands:', 'info');
+                this.writeLine('');
+
+                const helpHtml = commands.map(([cmd, desc]) =>
+                    `<div class="help-row"><span class="help-cmd">${cmd}</span><span class="help-desc">${desc}</span></div>`
+                ).join('');
+
+                this.writeHtml(`<div class="help-table">${helpHtml}</div>`);
+                this.writeLine('');
+                this.writeLine('Keyboard shortcuts:', 'info');
+                this.writeLine('  Ctrl+L     Clear terminal');
+                this.writeLine('  Ctrl+C     Cancel current input');
+                this.writeLine('  Tab        Autocomplete');
+                this.writeLine('  ↑/↓        Navigate history');
+            }
+
+            resolvePath(path) {
+                if (!path) return this.cwd;
+
+                // Handle ~ as home directory
+                if (path.startsWith('~')) {
+                    path = '/' + CONFIG.username + path.slice(1);
+                }
+
+                // Handle absolute paths
+                if (path.startsWith('/')) {
+                    return this.normalizePath(path);
+                }
+
+                // Handle relative paths
+                return this.normalizePath(this.cwd + '/' + path);
+            }
+
+            normalizePath(path) {
+                const parts = path.split('/').filter(p => p && p !== '.');
+                const result = [];
+
+                for (const part of parts) {
+                    if (part === '..') {
+                        if (result.length > 1) {
+                            result.pop();
+                        }
+                    } else {
+                        result.push(part);
+                    }
+                }
+
+                return '/' + result.join('/');
+            }
+
+            async cmdLs(args) {
+                let path = this.cwd;
+                let showAll = false;
+                let longFormat = false;
+
+                for (const arg of args) {
+                    if (arg.startsWith('-')) {
+                        if (arg.includes('a')) showAll = true;
+                        if (arg.includes('l')) longFormat = true;
+                    } else {
+                        path = this.resolvePath(arg);
+                    }
+                }
+
+                const files = await this.app.listFiles(path);
+
+                if (files.length === 0) {
+                    this.writeLine('(empty directory)', 'output');
+                    return;
+                }
+
+                // Sort: folders first, then files
+                files.sort((a, b) => {
+                    if (a.type !== b.type) {
+                        return a.type === 'folder' ? -1 : 1;
+                    }
+                    return a.path.localeCompare(b.path);
+                });
+
+                if (longFormat) {
+                    const items = files.map(f => {
+                        const name = f.path.split('/').pop();
+                        const size = f.type === 'folder' ? '-' : this.formatSize(f.size || 0);
+                        const date = f.updated_at ? new Date(f.updated_at * 1000).toLocaleDateString() : '-';
+                        const isFolder = f.type === 'folder';
+                        return `<div class="ls-long-item"><span class="ls-size">${size}</span><span class="ls-date">${date}</span><span class="file-name ${isFolder ? 'folder' : ''}">${name}${isFolder ? '/' : ''}</span></div>`;
+                    }).join('');
+                    this.writeHtml(`<div class="ls-long">${items}</div>`);
+                } else {
+                    const items = files.map(f => {
+                        const name = f.path.split('/').pop();
+                        const isFolder = f.type === 'folder';
+                        const icon = isFolder ? '📁' : this.getFileIcon(name);
+                        return `<div class="file-item"><span class="file-icon">${icon}</span><span class="file-name ${isFolder ? 'folder' : ''}">${name}${isFolder ? '/' : ''}</span></div>`;
+                    }).join('');
+                    this.writeHtml(`<div class="file-listing">${items}</div>`);
+                }
+            }
+
+            async cmdCd(path) {
+                if (!path || path === '~') {
+                    this.cwd = '/' + CONFIG.username;
+                    this.updatePrompt();
+                    return;
+                }
+
+                const newPath = this.resolvePath(path);
+
+                // Verify the path exists and is a directory
+                try {
+                    const response = await this.app.api(newPath);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.type === 'folder' || data.children) {
+                            this.cwd = newPath;
+                            this.updatePrompt();
+                        } else {
+                            this.writeLine(`cd: not a directory: ${path}`, 'error');
+                        }
+                    } else {
+                        this.writeLine(`cd: no such directory: ${path}`, 'error');
+                    }
+                } catch (e) {
+                    this.writeLine(`cd: no such directory: ${path}`, 'error');
+                }
+            }
+
+            async cmdCat(args) {
+                if (args.length === 0) {
+                    this.writeLine('cat: missing file operand', 'error');
+                    return;
+                }
+
+                for (const arg of args) {
+                    const path = this.resolvePath(arg);
+                    const content = await this.app.readFile(path);
+
+                    if (content !== null) {
+                        this.writeLine(content, 'output');
+                    } else {
+                        this.writeLine(`cat: ${arg}: No such file`, 'error');
+                    }
+                }
+            }
+
+            async cmdHead(args) {
+                let lines = 10;
+                let files = [];
+
+                for (let i = 0; i < args.length; i++) {
+                    if (args[i] === '-n' && args[i + 1]) {
+                        lines = parseInt(args[i + 1]) || 10;
+                        i++;
+                    } else if (!args[i].startsWith('-')) {
+                        files.push(args[i]);
+                    }
+                }
+
+                if (files.length === 0) {
+                    this.writeLine('head: missing file operand', 'error');
+                    return;
+                }
+
+                for (const file of files) {
+                    const path = this.resolvePath(file);
+                    const content = await this.app.readFile(path);
+
+                    if (content !== null) {
+                        const contentLines = content.split('\n').slice(0, lines);
+                        this.writeLine(contentLines.join('\n'), 'output');
+                    } else {
+                        this.writeLine(`head: ${file}: No such file`, 'error');
+                    }
+                }
+            }
+
+            async cmdTail(args) {
+                let lines = 10;
+                let files = [];
+
+                for (let i = 0; i < args.length; i++) {
+                    if (args[i] === '-n' && args[i + 1]) {
+                        lines = parseInt(args[i + 1]) || 10;
+                        i++;
+                    } else if (!args[i].startsWith('-')) {
+                        files.push(args[i]);
+                    }
+                }
+
+                if (files.length === 0) {
+                    this.writeLine('tail: missing file operand', 'error');
+                    return;
+                }
+
+                for (const file of files) {
+                    const path = this.resolvePath(file);
+                    const content = await this.app.readFile(path);
+
+                    if (content !== null) {
+                        const contentLines = content.split('\n').slice(-lines);
+                        this.writeLine(contentLines.join('\n'), 'output');
+                    } else {
+                        this.writeLine(`tail: ${file}: No such file`, 'error');
+                    }
+                }
+            }
+
+            async cmdMkdir(name) {
+                if (!name) {
+                    this.writeLine('mkdir: missing operand', 'error');
+                    return;
+                }
+
+                const path = this.resolvePath(name);
+                const apiPath = path.startsWith('/') ? path.slice(1) : path;
+
+                const response = await this.app.api('/api/create-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: apiPath })
+                });
+
+                if (response.ok) {
+                    this.writeLine(`Created directory: ${name}`, 'success');
+                } else {
+                    const error = await response.json();
+                    this.writeLine(`mkdir: ${error.error || 'Failed to create directory'}`, 'error');
+                }
+            }
+
+            async cmdTouch(name) {
+                if (!name) {
+                    this.writeLine('touch: missing operand', 'error');
+                    return;
+                }
+
+                const path = this.resolvePath(name);
+                const apiPath = path.startsWith('/') ? path.slice(1) : path;
+
+                const response = await this.app.api('/api/create-file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: apiPath, content: '' })
+                });
+
+                if (response.ok) {
+                    this.writeLine(`Created file: ${name}`, 'success');
+                } else {
+                    const error = await response.json();
+                    this.writeLine(`touch: ${error.error || 'Failed to create file'}`, 'error');
+                }
+            }
+
+            async cmdRm(args) {
+                let recursive = false;
+                let paths = [];
+
+                for (const arg of args) {
+                    if (arg === '-r' || arg === '-rf' || arg === '-R') {
+                        recursive = true;
+                    } else if (!arg.startsWith('-')) {
+                        paths.push(arg);
+                    }
+                }
+
+                if (paths.length === 0) {
+                    this.writeLine('rm: missing operand', 'error');
+                    return;
+                }
+
+                for (const p of paths) {
+                    const path = this.resolvePath(p);
+                    const apiPath = path.startsWith('/') ? path.slice(1) : path;
+
+                    const response = await this.app.api('/api/delete-node', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: apiPath })
+                    });
+
+                    if (response.ok) {
+                        this.writeLine(`Removed: ${p}`, 'success');
+                    } else {
+                        const error = await response.json();
+                        this.writeLine(`rm: ${error.error || 'Failed to remove'}`, 'error');
+                    }
+                }
+            }
+
+            async cmdRmdir(name) {
+                if (!name) {
+                    this.writeLine('rmdir: missing operand', 'error');
+                    return;
+                }
+
+                await this.cmdRm([name]);
+            }
+
+            async cmdCp(src, dest) {
+                if (!src || !dest) {
+                    this.writeLine('cp: missing operand', 'error');
+                    return;
+                }
+
+                const srcPath = this.resolvePath(src);
+                const destPath = this.resolvePath(dest);
+                const srcApiPath = srcPath.startsWith('/') ? srcPath.slice(1) : srcPath;
+                const destApiPath = destPath.startsWith('/') ? destPath.slice(1) : destPath;
+
+                const response = await this.app.api('/api/copy-node', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sourcePath: srcApiPath, targetPath: destApiPath })
+                });
+
+                if (response.ok) {
+                    this.writeLine(`Copied: ${src} -> ${dest}`, 'success');
+                } else {
+                    const error = await response.json();
+                    this.writeLine(`cp: ${error.error || 'Failed to copy'}`, 'error');
+                }
+            }
+
+            async cmdMv(src, dest) {
+                if (!src || !dest) {
+                    this.writeLine('mv: missing operand', 'error');
+                    return;
+                }
+
+                const srcPath = this.resolvePath(src);
+                const destPath = this.resolvePath(dest);
+                const srcApiPath = srcPath.startsWith('/') ? srcPath.slice(1) : srcPath;
+                const destApiPath = destPath.startsWith('/') ? destPath.slice(1) : destPath;
+
+                const response = await this.app.api('/api/move-node', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sourcePath: srcApiPath, targetPath: destApiPath })
+                });
+
+                if (response.ok) {
+                    this.writeLine(`Moved: ${src} -> ${dest}`, 'success');
+                } else {
+                    const error = await response.json();
+                    this.writeLine(`mv: ${error.error || 'Failed to move'}`, 'error');
+                }
+            }
+
+            async cmdFind(args) {
+                const pattern = args[0] || '*';
+                const files = await this.app.getAllFiles();
+
+                const regex = new RegExp(pattern.replace(/\*/g, '.*').replace(/\?/g, '.'), 'i');
+                const matches = files.filter(f => regex.test(f.path));
+
+                if (matches.length === 0) {
+                    this.writeLine('No matches found', 'output');
+                } else {
+                    for (const f of matches) {
+                        const relativePath = f.path.replace('/' + CONFIG.username, '~');
+                        this.writeLine(relativePath, 'output');
+                    }
+                }
+            }
+
+            async cmdGrep(args) {
+                if (args.length < 2) {
+                    this.writeLine('grep: usage: grep <pattern> <file>', 'error');
+                    return;
+                }
+
+                const pattern = args[0];
+                const file = args[1];
+                const path = this.resolvePath(file);
+                const content = await this.app.readFile(path);
+
+                if (content === null) {
+                    this.writeLine(`grep: ${file}: No such file`, 'error');
+                    return;
+                }
+
+                const regex = new RegExp(pattern, 'gi');
+                const lines = content.split('\n');
+                let found = false;
+
+                for (let i = 0; i < lines.length; i++) {
+                    if (regex.test(lines[i])) {
+                        const highlighted = lines[i].replace(regex, match => `<span style="color: var(--warning-color); font-weight: bold;">${match}</span>`);
+                        this.writeHtml(`<div class="terminal-line output"><span style="color: var(--info-color)">${i + 1}:</span> ${this.escapeHtml(lines[i]).replace(new RegExp(this.escapeHtml(pattern), 'gi'), match => `<span style="color: var(--warning-color); font-weight: bold;">${match}</span>`)}</div>`);
+                        found = true;
+                    }
+                }
+
+                if (!found) {
+                    this.writeLine('No matches found', 'output');
+                }
+            }
+
+            async cmdWc(args) {
+                if (args.length === 0) {
+                    this.writeLine('wc: missing operand', 'error');
+                    return;
+                }
+
+                for (const arg of args) {
+                    const path = this.resolvePath(arg);
+                    const content = await this.app.readFile(path);
+
+                    if (content === null) {
+                        this.writeLine(`wc: ${arg}: No such file`, 'error');
+                        continue;
+                    }
+
+                    const lines = content.split('\n').length;
+                    const words = content.split(/\s+/).filter(w => w).length;
+                    const chars = content.length;
+
+                    this.writeLine(`  ${lines} lines, ${words} words, ${chars} chars  ${arg}`, 'output');
+                }
+            }
+
+            async cmdTree(path) {
+                const targetPath = path ? this.resolvePath(path) : this.cwd;
+                const files = await this.app.getAllFiles();
+
+                // Filter files that are under the target path
+                const relevantFiles = files.filter(f => f.path.startsWith(targetPath));
+
+                if (relevantFiles.length === 0) {
+                    this.writeLine('(empty)', 'output');
+                    return;
+                }
+
+                // Build tree structure
+                const tree = this.buildTree(relevantFiles, targetPath);
+                this.renderTree(tree, '', true);
+            }
+
+            buildTree(files, basePath) {
+                const root = { name: basePath.split('/').pop() || '/', children: {} };
+
+                for (const file of files) {
+                    const relativePath = file.path.replace(basePath, '').replace(/^\//, '');
+                    if (!relativePath) continue;
+
+                    const parts = relativePath.split('/');
+                    let current = root;
+
+                    for (let i = 0; i < parts.length; i++) {
+                        const part = parts[i];
+                        if (!current.children[part]) {
+                            current.children[part] = {
+                                name: part,
+                                children: {},
+                                isFile: i === parts.length - 1 && file.type !== 'folder'
+                            };
+                        }
+                        current = current.children[part];
+                    }
+                }
+
+                return root;
+            }
+
+            renderTree(node, prefix, isLast) {
+                const connector = isLast ? '└── ' : '├── ';
+                const icon = node.isFile ? this.getFileIcon(node.name) : '📁';
+                this.writeLine(`${prefix}${connector}${icon} ${node.name}`, 'output');
+
+                const children = Object.values(node.children);
+                const newPrefix = prefix + (isLast ? '    ' : '│   ');
+
+                children.forEach((child, index) => {
+                    this.renderTree(child, newPrefix, index === children.length - 1);
+                });
+            }
+
+            async cmdStat(path) {
+                if (!path) {
+                    this.writeLine('stat: missing operand', 'error');
+                    return;
+                }
+
+                const fullPath = this.resolvePath(path);
+                const response = await this.app.api(fullPath);
+
+                if (!response.ok) {
+                    this.writeLine(`stat: ${path}: No such file or directory`, 'error');
+                    return;
+                }
+
+                const data = await response.json();
+
+                this.writeLine(`  File: ${path}`, 'output');
+                this.writeLine(`  Type: ${data.type || 'file'}`, 'output');
+                if (data.size !== undefined) {
+                    this.writeLine(`  Size: ${this.formatSize(data.size)}`, 'output');
+                }
+                if (data.created_at) {
+                    this.writeLine(`  Created: ${new Date(data.created_at * 1000).toLocaleString()}`, 'output');
+                }
+                if (data.updated_at) {
+                    this.writeLine(`  Modified: ${new Date(data.updated_at * 1000).toLocaleString()}`, 'output');
+                }
+            }
+
+            async cmdWrite(file, content) {
+                if (!file) {
+                    this.writeLine('write: missing file operand', 'error');
+                    return;
+                }
+
+                const path = this.resolvePath(file);
+                const apiPath = path.startsWith('/') ? path.slice(1) : path;
+
+                const response = await this.app.api('/' + apiPath, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: content || ''
+                });
+
+                if (response.ok) {
+                    this.writeLine(`Written to: ${file}`, 'success');
+                } else {
+                    this.writeLine('write: Failed to write file', 'error');
+                }
+            }
+
+            async cmdAppend(file, content) {
+                if (!file) {
+                    this.writeLine('append: missing file operand', 'error');
+                    return;
+                }
+
+                const path = this.resolvePath(file);
+                const existing = await this.app.readFile(path);
+                const newContent = (existing || '') + (content || '') + '\n';
+
+                const apiPath = path.startsWith('/') ? path.slice(1) : path;
+
+                const response = await this.app.api('/' + apiPath, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: newContent
+                });
+
+                if (response.ok) {
+                    this.writeLine(`Appended to: ${file}`, 'success');
+                } else {
+                    this.writeLine('append: Failed to append to file', 'error');
+                }
+            }
+
+            cmdHistory() {
+                if (this.history.length === 0) {
+                    this.writeLine('No commands in history', 'output');
+                    return;
+                }
+
+                this.history.forEach((cmd, i) => {
+                    this.writeLine(`  ${(i + 1).toString().padStart(4)}  ${cmd}`, 'output');
+                });
+            }
+
+            clear() {
+                this.contentElement.innerHTML = `
+                    <div class="input-line">
+                        <span class="prompt">${this.getPrompt()}</span>
+                        <input type="text" class="terminal-input" autofocus spellcheck="false" autocomplete="off">
+                    </div>
+                `;
+                this.inputElement = this.contentElement.querySelector('.terminal-input');
+                this.inputElement.addEventListener('keydown', (e) => this.handleKeyDown(e));
+                this.inputElement.focus();
+            }
+
+            writeLine(text, className = '') {
+                const inputLine = this.contentElement.querySelector('.input-line');
+                const line = document.createElement('div');
+                line.className = `terminal-line ${className}`;
+                line.textContent = text;
+                inputLine.parentNode.insertBefore(line, inputLine);
+                this.scrollToBottom();
+            }
+
+            writeHtml(html) {
+                const inputLine = this.contentElement.querySelector('.input-line');
+                const div = document.createElement('div');
+                div.innerHTML = html;
+                while (div.firstChild) {
+                    inputLine.parentNode.insertBefore(div.firstChild, inputLine);
+                }
+                this.scrollToBottom();
+            }
+
+            newInputLine() {
+                const oldInput = this.contentElement.querySelector('.input-line');
+                const newInputLine = document.createElement('div');
+                newInputLine.className = 'input-line';
+                newInputLine.innerHTML = `
+                    <span class="prompt">${this.getPrompt()}</span>
+                    <input type="text" class="terminal-input" autofocus spellcheck="false" autocomplete="off">
+                `;
+                oldInput.parentNode.insertBefore(newInputLine, oldInput.nextSibling);
+                oldInput.querySelector('input')?.remove();
+                oldInput.classList.remove('input-line');
+                oldInput.classList.add('command-history-line');
+
+                this.inputElement = newInputLine.querySelector('.terminal-input');
+                this.inputElement.addEventListener('keydown', (e) => this.handleKeyDown(e));
+                this.inputElement.focus();
+                this.scrollToBottom();
+            }
+
+            scrollToBottom() {
+                this.contentElement.scrollTop = this.contentElement.scrollHeight;
+            }
+
+            formatSize(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+            }
+
+            getFileIcon(name) {
+                const ext = name.split('.').pop()?.toLowerCase();
+                const icons = {
+                    'js': '📜', 'ts': '📘', 'jsx': '⚛️', 'tsx': '⚛️',
+                    'json': '📋', 'html': '🌐', 'css': '🎨', 'scss': '🎨',
+                    'md': '📝', 'txt': '📄', 'py': '🐍', 'rb': '💎',
+                    'go': '🔵', 'rs': '🦀', 'java': '☕', 'sh': '⚡',
+                    'yaml': '⚙️', 'yml': '⚙️', 'xml': '📰', 'sql': '🗃️',
+                    'png': '🖼️', 'jpg': '🖼️', 'jpeg': '🖼️', 'gif': '🖼️', 'svg': '🎨'
+                };
+                return icons[ext] || '📄';
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            focus() {
+                this.inputElement?.focus();
+            }
+        }
+
+        class XYTermApp {
+            constructor() {
+                this.terminals = [];
+                this.nextTerminalId = 1;
+                this.filesCache = null;
+                this.filesCacheTime = 0;
+            }
+
+            init() {
+                this.addTerminal();
+                this.setupKeyboardShortcuts();
+            }
+
+            async api(path, options = {}) {
+                const url = `${CONFIG.agentPodServer}${path}`;
+                const headers = { ...options.headers };
+
+                if (CONFIG.accessToken) {
+                    headers['Authorization'] = `Bearer ${CONFIG.accessToken}`;
+                }
+
+                return fetch(url, { ...options, headers });
+            }
+
+            async listFiles(path) {
+                const response = await this.api(path);
+                if (!response.ok) return [];
+
+                const data = await response.json();
+                return data.children || data.files || [];
+            }
+
+            async getAllFiles() {
+                // Cache files for 5 seconds
+                if (this.filesCache && Date.now() - this.filesCacheTime < 5000) {
+                    return this.filesCache;
+                }
+
+                const response = await this.api('/');
+                if (!response.ok) return [];
+
+                const data = await response.json();
+                this.filesCache = data.files || [];
+                this.filesCacheTime = Date.now();
+                return this.filesCache;
+            }
+
+            async readFile(path) {
+                const apiPath = path.startsWith('/') ? path.slice(1) : path;
+                const response = await this.api('/' + apiPath);
+
+                if (!response.ok) return null;
+
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    const data = await response.json();
+                    return data.content || '';
+                }
+                return await response.text();
+            }
+
+            addTerminal() {
+                const terminal = new Terminal(this.nextTerminalId++, this);
+                this.terminals.push(terminal);
+
+                const container = document.getElementById('terminalsContainer');
+                const pane = terminal.render();
+
+                // Add resize handle if not the first terminal
+                if (this.terminals.length > 1) {
+                    const handle = document.createElement('div');
+                    handle.className = 'resize-handle';
+                    handle.dataset.terminalId = terminal.id;
+                    this.setupResizeHandle(handle);
+                    container.appendChild(handle);
+                }
+
+                container.appendChild(pane);
+                terminal.focus();
+                this.updateTerminalCount();
+            }
+
+            closeTerminal(id) {
+                if (this.terminals.length <= 1) {
+                    // Don't close the last terminal
+                    return;
+                }
+
+                const index = this.terminals.findIndex(t => t.id === id);
+                if (index === -1) return;
+
+                const terminal = this.terminals[index];
+                const container = document.getElementById('terminalsContainer');
+
+                // Remove resize handle
+                const handle = container.querySelector(`.resize-handle[data-terminal-id="${id}"]`);
+                if (handle) handle.remove();
+
+                // If closing first terminal, remove the next resize handle
+                if (index === 0 && this.terminals.length > 1) {
+                    const nextHandle = container.querySelector('.resize-handle');
+                    if (nextHandle) nextHandle.remove();
+                }
+
+                // Remove terminal element
+                terminal.element.remove();
+                this.terminals.splice(index, 1);
+
+                // Focus the previous or next terminal
+                if (this.terminals.length > 0) {
+                    const focusIndex = Math.min(index, this.terminals.length - 1);
+                    this.terminals[focusIndex].focus();
+                }
+
+                this.updateTerminalCount();
+            }
+
+            clearTerminal(id) {
+                const terminal = this.terminals.find(t => t.id === id);
+                if (terminal) {
+                    terminal.clear();
+                }
+            }
+
+            clearAll() {
+                for (const terminal of this.terminals) {
+                    terminal.clear();
+                }
+            }
+
+            setupResizeHandle(handle) {
+                let startX, startWidths;
+
+                handle.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    startX = e.clientX;
+
+                    const container = document.getElementById('terminalsContainer');
+                    const panes = container.querySelectorAll('.terminal-pane');
+                    startWidths = Array.from(panes).map(p => p.offsetWidth);
+
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                });
+
+                const onMouseMove = (e) => {
+                    const delta = e.clientX - startX;
+                    const container = document.getElementById('terminalsContainer');
+                    const panes = Array.from(container.querySelectorAll('.terminal-pane'));
+                    const handleIndex = Array.from(container.querySelectorAll('.resize-handle')).indexOf(handle);
+
+                    if (handleIndex >= 0 && handleIndex < panes.length - 1) {
+                        const pane1 = panes[handleIndex];
+                        const pane2 = panes[handleIndex + 1];
+
+                        const newWidth1 = Math.max(200, startWidths[handleIndex] + delta);
+                        const newWidth2 = Math.max(200, startWidths[handleIndex + 1] - delta);
+
+                        pane1.style.flex = `0 0 ${newWidth1}px`;
+                        pane2.style.flex = `0 0 ${newWidth2}px`;
+                    }
+                };
+
+                const onMouseUp = () => {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+
+                    // Reset flex to allow natural sizing
+                    const container = document.getElementById('terminalsContainer');
+                    const panes = container.querySelectorAll('.terminal-pane');
+                    panes.forEach(p => p.style.flex = '1');
+                };
+            }
+
+            setupKeyboardShortcuts() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey && e.shiftKey && e.key === 'N') {
+                        e.preventDefault();
+                        this.addTerminal();
+                    }
+                });
+            }
+
+            updateTerminalCount() {
+                const count = this.terminals.length;
+                document.getElementById('terminalCount').textContent =
+                    `${count} terminal${count !== 1 ? 's' : ''}`;
+            }
+        }
+
+        const app = new XYTermApp();
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => app.init());
+        } else {
+            app.init();
+        }
+    </script>
+</body>
+
+</html>

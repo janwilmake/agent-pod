@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{FILE_NAME}} - XYText</title>
+    <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📝</text></svg>" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #24292e;
+            --border-color: #e1e4e8;
+            --explorer-bg: #f6f8fa;
+            --explorer-header-bg: #e1e4e8;
+            --explorer-item-hover: #e1e4e8;
+            --explorer-item-active: #0969da;
+            --status-bar-bg: #0969da;
+            --context-menu-bg: #ffffff;
+            --context-menu-border: #e1e4e8;
+            --context-menu-hover: #f6f8fa;
+            --danger-color: #cf222e;
+            --editor-bg: #ffffff;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #0d1117;
+                --text-color: #e6edf3;
+                --border-color: #30363d;
+                --explorer-bg: #161b22;
+                --explorer-header-bg: #21262d;
+                --explorer-item-hover: #21262d;
+                --explorer-item-active: #1f6feb;
+                --status-bar-bg: #1f6feb;
+                --context-menu-bg: #161b22;
+                --context-menu-border: #30363d;
+                --context-menu-hover: #21262d;
+                --danger-color: #f85149;
+                --editor-bg: #0d1117;
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        .app-layout {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .editor-container {
+            flex: 1;
+            position: relative;
+            min-width: 300px;
+            background-color: var(--editor-bg);
+        }
+
+        .explorer-container {
+            width: 280px;
+            background: var(--explorer-bg);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .explorer-header {
+            background: var(--explorer-header-bg);
+            color: var(--text-color);
+            padding: 12px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .explorer-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .explorer-action-btn {
+            background: none;
+            border: none;
+            color: var(--text-color);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            font-size: 14px;
+            opacity: 0.7;
+            transition: opacity 0.2s, background 0.2s;
+        }
+
+        .explorer-action-btn:hover {
+            opacity: 1;
+            background: var(--explorer-item-hover);
+        }
+
+        .explorer-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+
+        .explorer-files {
+            min-height: 100px;
+        }
+
+        .explorer-item {
+            display: flex;
+            align-items: center;
+            padding: 4px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            line-height: 22px;
+            white-space: nowrap;
+            user-select: none;
+            transition: background-color 0.15s ease;
+        }
+
+        .explorer-item:hover {
+            background: var(--explorer-item-hover);
+        }
+
+        .explorer-item.active {
+            background: var(--explorer-item-active);
+            color: #ffffff;
+        }
+
+        .explorer-item.folder {
+            font-weight: 500;
+        }
+
+        .expand-btn {
+            background: none;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            padding: 0;
+            margin-right: 4px;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .expand-btn svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        .explorer-icon {
+            margin-right: 6px;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .explorer-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .status-bar {
+            background: var(--status-bar-bg);
+            color: #ffffff;
+            padding: 4px 16px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 24px;
+        }
+
+        .status-bar-left {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .status-btn {
+            color: #ffffff;
+            cursor: pointer;
+            font-size: 12px;
+            text-decoration: none;
+            background: none;
+            border: none;
+            padding: 0;
+            opacity: 0.9;
+        }
+
+        .status-btn:hover {
+            opacity: 1;
+            text-decoration: underline;
+        }
+
+        .no-files {
+            padding: 20px;
+            text-align: center;
+            opacity: 0.6;
+            font-style: italic;
+            font-size: 13px;
+        }
+
+        .loading {
+            padding: 20px;
+            text-align: center;
+            opacity: 0.6;
+            font-size: 13px;
+        }
+
+        /* Context Menu */
+        .context-menu {
+            position: fixed;
+            background: var(--context-menu-bg);
+            border: 1px solid var(--context-menu-border);
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            z-index: 10000;
+            min-width: 180px;
+            display: none;
+            overflow: hidden;
+            padding: 4px 0;
+        }
+
+        .context-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-color);
+            transition: background-color 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .context-menu-item:hover {
+            background: var(--context-menu-hover);
+        }
+
+        .context-menu-item.danger {
+            color: var(--danger-color);
+        }
+
+        .context-menu-separator {
+            height: 1px;
+            background: var(--border-color);
+            margin: 4px 0;
+        }
+
+        /* User info in explorer */
+        .user-section {
+            border-top: 1px solid var(--border-color);
+            padding: 12px;
+            margin-top: auto;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+        }
+
+        .user-details {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .user-name {
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .user-username {
+            font-size: 11px;
+            opacity: 0.6;
+        }
+
+        /* Error message */
+        .error-message {
+            padding: 20px;
+            text-align: center;
+            color: var(--danger-color);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-layout">
+        <div class="main-content">
+            <div class="editor-container" id="editor"></div>
+
+            <div class="explorer-container">
+                <div class="explorer-header">
+                    <span>Explorer</span>
+                    <div class="explorer-actions">
+                        <button class="explorer-action-btn" onclick="app.createNewFile()" title="New File">📄</button>
+                        <button class="explorer-action-btn" onclick="app.createNewFolder()"
+                            title="New Folder">📁</button>
+                        <button class="explorer-action-btn" onclick="app.refreshFiles()" title="Refresh">🔄</button>
+                    </div>
+                </div>
+                <div class="explorer-content">
+                    <div class="explorer-files" id="explorerFiles">
+                        <div class="loading">Loading files...</div>
+                    </div>
+                </div>
+                <div class="user-section" id="userSection" style="display: none;">
+                    <div class="user-info">
+                        <img class="user-avatar" id="userAvatar" src="" alt="User">
+                        <div class="user-details">
+                            <div class="user-name" id="userName"></div>
+                            <div class="user-username" id="userUsername"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-bar-left">
+                <span id="connectionStatus">Connecting...</span>
+                <button class="status-btn" onclick="window.location.href='/logout'">Logout</button>
+                <button class="status-btn"
+                    onclick="window.open('https://letmeprompt.com/from/'+window.location.href)">Prompt</button>
+            </div>
+            <span id="cursorInfo">Line 1, Column 1</span>
+        </div>
+    </div>
+
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" onclick="app.contextCopy()">📋 Copy</div>
+        <div class="context-menu-item" onclick="app.contextRename()">✏️ Rename</div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" onclick="app.contextNewFile()">📄 New File</div>
+        <div class="context-menu-item" onclick="app.contextNewFolder()">📁 New Folder</div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item danger" onclick="app.contextDelete()">🗑️ Delete</div>
+    </div>
+
+    <script src="https://unpkg.com/monaco-editor@0.44.0/min/vs/loader.js"></script>
+    <script>
+        // Configuration injected by server
+        const CONFIG = {
+            agentPodServer: "{{AGENT_POD_SERVER}}",
+            accessToken: "{{ACCESS_TOKEN}}",
+            currentPath: "{{CURRENT_PATH}}",
+            firstSegment: "{{FIRST_SEGMENT}}"
+        };
+
+        // SVG icons
+        const ICONS = {
+            chevronRight: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M10.07 8.02L5.71 3.67l.62-.62L11 7.71v.62L6.33 13l-.62-.62 4.36-4.36z"/></svg>',
+            chevronDown: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.98 10.07l4.36-4.36.62.62L8.29 11h-.62L3 6.33l.62-.62 4.36 4.36z"/></svg>'
+        };
+
+        class XYTextApp {
+            constructor() {
+                this.editor = null;
+                this.ws = null;
+                this.sessionId = null;
+                this.version = 0;
+                this.user = null;
+                this.files = [];
+                this.expandedPaths = new Set();
+                this.contextTarget = null;
+                this.isAdmin = false;
+                this.fileContent = "";
+                this.saveTimeout = null;
+                this.settingFromWs = false;
+            }
+
+            async init() {
+                this.loadExpandedState();
+                await this.fetchUserInfo();
+                await this.fetchFiles();
+                await this.fetchCurrentFile();
+                await this.setupMonaco();
+                this.setupWebSocket();
+                this.setupEventListeners();
+                document.getElementById('connectionStatus').textContent = 'Ready';
+            }
+
+            // API Helper
+            async api(path, options = {}) {
+                const url = `${CONFIG.agentPodServer}${path}`;
+                const headers = { ...options.headers };
+
+                if (CONFIG.accessToken) {
+                    headers['Authorization'] = `Bearer ${CONFIG.accessToken}`;
+                }
+
+                const response = await fetch(url, { ...options, headers });
+                return response;
+            }
+
+            async fetchUserInfo() {
+                if (!CONFIG.accessToken) return;
+
+                try {
+                    const response = await this.api('/me');
+                    if (response.ok) {
+                        this.user = await response.json();
+                        this.isAdmin = CONFIG.firstSegment === this.user.username;
+                        this.updateUserSection();
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch user info:', e);
+                }
+            }
+
+            updateUserSection() {
+                if (!this.user) return;
+
+                const section = document.getElementById('userSection');
+                const avatar = document.getElementById('userAvatar');
+                const name = document.getElementById('userName');
+                const username = document.getElementById('userUsername');
+
+                section.style.display = 'block';
+                avatar.src = this.user.profile_image_url || '';
+                name.textContent = this.user.name || this.user.username;
+                username.textContent = '@' + this.user.username;
+            }
+
+            async fetchFiles() {
+                try {
+                    const response = await this.api('/');
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.files = data.files || [];
+                        this.renderExplorer();
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch files:', e);
+                    document.getElementById('explorerFiles').innerHTML =
+                        '<div class="error-message">Failed to load files</div>';
+                }
+            }
+
+            async fetchCurrentFile() {
+                if (CONFIG.currentPath === '/' || CONFIG.currentPath === '/' + CONFIG.firstSegment) {
+                    this.fileContent = `# Welcome to ${CONFIG.firstSegment}'s workspace\n\nSelect a file from the explorer or create a new one.`;
+                    return;
+                }
+
+                try {
+                    // Remove leading slash for API call
+                    const apiPath = CONFIG.currentPath.startsWith('/') ? CONFIG.currentPath.slice(1) : CONFIG.currentPath;
+                    const response = await this.api('/' + apiPath);
+
+                    if (response.ok) {
+                        const contentType = response.headers.get('content-type') || '';
+                        if (contentType.includes('application/json')) {
+                            // API returns JSON with file metadata - extract content field
+                            const data = await response.json();
+                            this.fileContent = data.content || '';
+                        } else {
+                            // Plain text response
+                            this.fileContent = await response.text();
+                        }
+                    } else if (response.status === 404 && this.isAdmin) {
+                        // Create new file
+                        this.fileContent = "";
+                        await this.saveFile(this.fileContent);
+                    } else {
+                        this.fileContent = `# File not found\n\nThe file "${CONFIG.currentPath}" does not exist.`;
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch file:', e);
+                    this.fileContent = `# Error\n\nFailed to load file: ${e.message}`;
+                }
+            }
+
+            async saveFile(content) {
+                if (!this.isAdmin) return false;
+
+                try {
+                    const apiPath = CONFIG.currentPath.startsWith('/') ? CONFIG.currentPath.slice(1) : CONFIG.currentPath;
+                    const response = await this.api('/' + apiPath, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'text/plain' },
+                        body: content
+                    });
+                    return response.ok;
+                } catch (e) {
+                    console.error('Failed to save file:', e);
+                    return false;
+                }
+            }
+
+            async setupMonaco() {
+                return new Promise((resolve) => {
+                    require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.44.0/min/vs' } });
+                    require(['vs/editor/editor.main'], () => {
+                        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+                        // Detect language from file extension
+                        const ext = CONFIG.currentPath.split('.').pop()?.toLowerCase() || '';
+                        const languageMap = {
+                            'js': 'javascript',
+                            'ts': 'typescript',
+                            'jsx': 'javascript',
+                            'tsx': 'typescript',
+                            'json': 'json',
+                            'html': 'html',
+                            'htm': 'html',
+                            'css': 'css',
+                            'scss': 'scss',
+                            'less': 'less',
+                            'md': 'markdown',
+                            'markdown': 'markdown',
+                            'py': 'python',
+                            'rb': 'ruby',
+                            'go': 'go',
+                            'rs': 'rust',
+                            'java': 'java',
+                            'c': 'c',
+                            'cpp': 'cpp',
+                            'h': 'c',
+                            'hpp': 'cpp',
+                            'sh': 'shell',
+                            'bash': 'shell',
+                            'yaml': 'yaml',
+                            'yml': 'yaml',
+                            'xml': 'xml',
+                            'sql': 'sql'
+                        };
+                        const language = languageMap[ext] || 'markdown';
+
+                        this.editor = monaco.editor.create(document.getElementById('editor'), {
+                            value: this.fileContent,
+                            language: language,
+                            theme: isDark ? 'vs-dark' : 'vs',
+                            automaticLayout: true,
+                            wordWrap: 'on',
+                            minimap: { enabled: true },
+                            fontSize: 14,
+                            lineHeight: 22,
+                            padding: { top: 16, bottom: 16 },
+                            readOnly: !this.isAdmin,
+                            scrollBeyondLastLine: false,
+                            smoothScrolling: true,
+                            cursorBlinking: 'smooth',
+                            fontFamily: "'Cascadia Code', 'Fira Code', 'SF Mono', Monaco, monospace",
+                            fontLigatures: true,
+                            renderWhitespace: 'selection',
+                            rulers: [80, 120],
+                            bracketPairColorization: { enabled: true },
+                            guides: { indentation: true, highlightActiveIndentation: true }
+                        });
+
+                        this.editor.focus();
+
+                        // Theme change listener
+                        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                            monaco.editor.setTheme(e.matches ? 'vs-dark' : 'vs');
+                        });
+
+                        // Content change handler with debounced save
+                        this.editor.onDidChangeModelContent(() => {
+                            if (this.isAdmin && !this.settingFromWs) {
+                                this.scheduleAutoSave();
+                                this.broadcastChange();
+                            }
+                        });
+
+                        // Cursor position handler
+                        this.editor.onDidChangeCursorPosition(() => {
+                            this.updateCursorInfo();
+                        });
+
+                        resolve();
+                    });
+                });
+            }
+
+            scheduleAutoSave() {
+                clearTimeout(this.saveTimeout);
+                this.saveTimeout = setTimeout(() => {
+                    this.saveFile(this.editor.getValue());
+                }, 1000);
+            }
+
+            broadcastChange() {
+                if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+                this.version++;
+                const position = this.editor.getPosition();
+                this.ws.send(JSON.stringify({
+                    type: 'text',
+                    text: this.editor.getValue(),
+                    version: this.version,
+                    line: position?.lineNumber || 1,
+                    column: position?.column || 1
+                }));
+            }
+
+            setupWebSocket() {
+                if (!CONFIG.accessToken) return;
+
+                try {
+                    const wsProtocol = CONFIG.agentPodServer.startsWith('https') ? 'wss' : 'ws';
+                    const serverHost = CONFIG.agentPodServer.replace(/^https?:\/\//, '');
+                    // Pass token as query parameter since browsers can't set WebSocket headers
+                    const wsUrl = `${wsProtocol}://${serverHost}${CONFIG.currentPath}?token=${encodeURIComponent(CONFIG.accessToken)}`;
+
+                    this.ws = new WebSocket(wsUrl);
+
+                    this.ws.onopen = () => {
+                        document.getElementById('connectionStatus').textContent = 'Connected';
+                    };
+
+                    this.ws.onmessage = (event) => {
+                        try {
+                            const message = JSON.parse(event.data);
+                            this.handleWsMessage(message);
+                        } catch (e) {
+                            console.error('Failed to parse WS message:', e);
+                        }
+                    };
+
+                    this.ws.onclose = () => {
+                        document.getElementById('connectionStatus').textContent = 'Disconnected';
+                        // Reconnect after 3 seconds
+                        setTimeout(() => this.setupWebSocket(), 3000);
+                    };
+
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                    };
+                } catch (e) {
+                    console.error('Failed to setup WebSocket:', e);
+                }
+            }
+
+            handleWsMessage(message) {
+                switch (message.type) {
+                    case 'init':
+                        this.sessionId = message.sessionId;
+                        this.version = message.version || 0;
+                        break;
+
+                    case 'text':
+                        if (message.fromSession !== this.sessionId && this.editor) {
+                            const position = this.editor.getPosition();
+                            this.settingFromWs = true;
+                            this.editor.setValue(message.text || '');
+                            this.version = message.version || this.version;
+                            if (position) {
+                                this.editor.setPosition(position);
+                            }
+                            setTimeout(() => { this.settingFromWs = false; }, 10);
+                        }
+                        break;
+
+                    case 'join':
+                    case 'leave':
+                        console.log(`User ${message.username} ${message.type === 'join' ? 'joined' : 'left'}`);
+                        break;
+
+                    case 'file_change':
+                        console.log('File changed:', message.action, message.path);
+                        this.fetchFiles();
+                        break;
+
+                    case 'error':
+                        console.error('Server error:', message.message);
+                        break;
+                }
+            }
+
+            setupEventListeners() {
+                // Close context menu on click
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.context-menu')) {
+                        document.getElementById('contextMenu').style.display = 'none';
+                    }
+                });
+
+                // Prevent default context menu
+                document.addEventListener('contextmenu', (e) => {
+                    if (e.target.closest('.explorer-item')) {
+                        e.preventDefault();
+                    }
+                });
+            }
+
+            loadExpandedState() {
+                try {
+                    const saved = localStorage.getItem('xytext_expanded_' + CONFIG.firstSegment);
+                    if (saved) {
+                        this.expandedPaths = new Set(JSON.parse(saved));
+                    }
+                } catch (e) { }
+            }
+
+            saveExpandedState() {
+                try {
+                    localStorage.setItem('xytext_expanded_' + CONFIG.firstSegment,
+                        JSON.stringify([...this.expandedPaths]));
+                } catch (e) { }
+            }
+
+            renderExplorer() {
+                const container = document.getElementById('explorerFiles');
+
+                if (this.files.length === 0) {
+                    container.innerHTML = '<div class="no-files">No files yet. Create one!</div>';
+                    return;
+                }
+
+                // Build tree structure
+                const tree = this.buildFileTree(this.files);
+                const html = this.renderTreeNode(tree, 0);
+                container.innerHTML = html;
+            }
+
+            buildFileTree(files) {
+                const root = { children: new Map(), files: [] };
+
+                for (const file of files) {
+                    const path = file.path.startsWith('/') ? file.path.slice(1) : file.path;
+                    const parts = path.split('/');
+
+                    let current = root;
+                    for (let i = 0; i < parts.length - 1; i++) {
+                        const part = parts[i];
+                        if (!current.children.has(part)) {
+                            current.children.set(part, {
+                                name: part,
+                                path: '/' + parts.slice(0, i + 1).join('/'),
+                                children: new Map(),
+                                files: []
+                            });
+                        }
+                        current = current.children.get(part);
+                    }
+
+                    if (file.type === 'folder') {
+                        const name = parts[parts.length - 1];
+                        if (!current.children.has(name)) {
+                            current.children.set(name, {
+                                name: name,
+                                path: file.path,
+                                children: new Map(),
+                                files: []
+                            });
+                        }
+                    } else {
+                        current.files.push({
+                            ...file,
+                            name: parts[parts.length - 1]
+                        });
+                    }
+                }
+
+                return root;
+            }
+
+            renderTreeNode(node, level) {
+                let html = '';
+
+                // Sort and render folders first
+                const folders = [...node.children.values()].sort((a, b) =>
+                    a.name.localeCompare(b.name)
+                );
+
+                for (const folder of folders) {
+                    const isExpanded = this.expandedPaths.has(folder.path);
+                    const isActive = folder.path === CONFIG.currentPath;
+                    const indent = level * 16;
+
+                    html += `
+                        <div class="explorer-item folder ${isActive ? 'active' : ''}" 
+                             data-path="${this.escapeAttr(folder.path)}"
+                             data-type="folder"
+                             style="padding-left: ${indent + 8}px"
+                             onclick="app.handleItemClick(event, '${this.escapeAttr(folder.path)}', 'folder')"
+                             oncontextmenu="app.showContextMenu(event, '${this.escapeAttr(folder.path)}', 'folder')">
+                            <button class="expand-btn" onclick="event.stopPropagation(); app.toggleFolder('${this.escapeAttr(folder.path)}')">
+                                ${isExpanded ? ICONS.chevronDown : ICONS.chevronRight}
+                            </button>
+                            <span class="explorer-icon">📁</span>
+                            <span class="explorer-name">${this.escapeHtml(folder.name)}</span>
+                        </div>
+                    `;
+
+                    if (isExpanded) {
+                        html += this.renderTreeNode(folder, level + 1);
+                    }
+                }
+
+                // Sort and render files
+                const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
+
+                for (const file of files) {
+                    const isActive = file.path === CONFIG.currentPath;
+                    const indent = level * 16;
+                    const icon = this.getFileIcon(file.name);
+
+                    html += `
+                        <div class="explorer-item ${isActive ? 'active' : ''}"
+                             data-path="${this.escapeAttr(file.path)}"
+                             data-type="file"
+                             style="padding-left: ${indent + 8}px"
+                             onclick="app.handleItemClick(event, '${this.escapeAttr(file.path)}', 'file')"
+                             oncontextmenu="app.showContextMenu(event, '${this.escapeAttr(file.path)}', 'file')">
+                            <span class="explorer-icon">${icon}</span>
+                            <span class="explorer-name">${this.escapeHtml(file.name)}</span>
+                        </div>
+                    `;
+                }
+
+                return html;
+            }
+
+            getFileIcon(name) {
+                const ext = name.split('.').pop()?.toLowerCase();
+                const icons = {
+                    'js': '📜', 'ts': '📘', 'jsx': '⚛️', 'tsx': '⚛️',
+                    'json': '📋', 'html': '🌐', 'css': '🎨', 'scss': '🎨',
+                    'md': '📝', 'txt': '📄', 'py': '🐍', 'rb': '💎',
+                    'go': '🔵', 'rs': '🦀', 'java': '☕', 'sh': '⚡',
+                    'yaml': '⚙️', 'yml': '⚙️', 'xml': '📰', 'sql': '🗃️',
+                    'png': '🖼️', 'jpg': '🖼️', 'jpeg': '🖼️', 'gif': '🖼️', 'svg': '🎨'
+                };
+                return icons[ext] || '📄';
+            }
+
+            handleItemClick(event, path, type) {
+                if (type === 'folder') {
+                    this.toggleFolder(path);
+                } else {
+                    // Navigate to file
+                    window.location.href = path;
+                }
+            }
+
+            toggleFolder(path) {
+                if (this.expandedPaths.has(path)) {
+                    this.expandedPaths.delete(path);
+                } else {
+                    this.expandedPaths.add(path);
+                }
+                this.saveExpandedState();
+                this.renderExplorer();
+            }
+
+            showContextMenu(event, path, type) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                if (!this.isAdmin) return;
+
+                this.contextTarget = { path, type };
+
+                const menu = document.getElementById('contextMenu');
+                menu.style.display = 'block';
+
+                // Position menu, keeping it within viewport
+                const x = Math.min(event.pageX, window.innerWidth - 200);
+                const y = Math.min(event.pageY, window.innerHeight - 250);
+
+                menu.style.left = x + 'px';
+                menu.style.top = y + 'px';
+            }
+
+            hideContextMenu() {
+                document.getElementById('contextMenu').style.display = 'none';
+            }
+
+            // Context menu actions
+            async contextCopy() {
+                this.hideContextMenu();
+                if (!this.contextTarget) return;
+
+                const { path } = this.contextTarget;
+                const apiPath = path.startsWith('/') ? path.slice(1) : path;
+                const copyPath = apiPath + '_copy';
+
+                try {
+                    const response = await this.api('/api/copy-node', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sourcePath: apiPath, targetPath: copyPath })
+                    });
+
+                    if (response.ok) {
+                        this.fetchFiles();
+                    } else {
+                        const error = await response.json();
+                        alert('Copy failed: ' + (error.error || 'Unknown error'));
+                    }
+                } catch (e) {
+                    alert('Copy failed: ' + e.message);
+                }
+            }
+
+            async contextRename() {
+                this.hideContextMenu();
+                if (!this.contextTarget) return;
+
+                const { path } = this.contextTarget;
+                const currentName = path.split('/').pop();
+                const newName = prompt('Enter new name:', currentName);
+
+                if (!newName || newName === currentName) return;
+
+                const apiPath = path.startsWith('/') ? path.slice(1) : path;
+
+                try {
+                    const response = await this.api('/api/rename-node', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: apiPath, newName })
+                    });
+
+                    if (response.ok) {
+                        if (path === CONFIG.currentPath) {
+                            const newPath = path.split('/').slice(0, -1).join('/') + '/' + newName;
+                            window.location.href = newPath;
+                        } else {
+                            this.fetchFiles();
+                        }
+                    } else {
+                        const error = await response.json();
+                        alert('Rename failed: ' + (error.error || 'Unknown error'));
+                    }
+                } catch (e) {
+                    alert('Rename failed: ' + e.message);
+                }
+            }
+
+            async contextNewFile() {
+                this.hideContextMenu();
+                if (!this.contextTarget) return;
+
+                const { path, type } = this.contextTarget;
+                const basePath = type === 'folder' ? path : path.split('/').slice(0, -1).join('/');
+
+                await this.createFileInPath(basePath);
+            }
+
+            async contextNewFolder() {
+                this.hideContextMenu();
+                if (!this.contextTarget) return;
+
+                const { path, type } = this.contextTarget;
+                const basePath = type === 'folder' ? path : path.split('/').slice(0, -1).join('/');
+
+                await this.createFolderInPath(basePath);
+            }
+
+            async contextDelete() {
+                this.hideContextMenu();
+                if (!this.contextTarget) return;
+
+                const { path, type } = this.contextTarget;
+
+                if (type === 'folder') {
+                    if (!confirm('Are you sure you want to delete this folder and all its contents?')) {
+                        return;
+                    }
+                }
+
+                const apiPath = path.startsWith('/') ? path.slice(1) : path;
+
+                try {
+                    const response = await this.api('/api/delete-node', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: apiPath })
+                    });
+
+                    if (response.ok) {
+                        if (path === CONFIG.currentPath) {
+                            window.location.href = '/' + CONFIG.firstSegment;
+                        } else {
+                            this.fetchFiles();
+                        }
+                    } else {
+                        const error = await response.json();
+                        alert('Delete failed: ' + (error.error || 'Unknown error'));
+                    }
+                } catch (e) {
+                    alert('Delete failed: ' + e.message);
+                }
+            }
+
+            // Header actions
+            async createNewFile() {
+                await this.createFileInPath('/' + CONFIG.firstSegment);
+            }
+
+            async createNewFolder() {
+                await this.createFolderInPath('/' + CONFIG.firstSegment);
+            }
+
+            async createFileInPath(basePath) {
+                const fileName = prompt('Enter file name:');
+                if (!fileName) return;
+
+                const fullPath = basePath + '/' + fileName;
+                const apiPath = fullPath.startsWith('/') ? fullPath.slice(1) : fullPath;
+
+                try {
+                    const response = await this.api('/api/create-file', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: apiPath, content: '' })
+                    });
+
+                    if (response.ok) {
+                        window.location.href = fullPath;
+                    } else {
+                        const error = await response.json();
+                        alert('Create file failed: ' + (error.error || 'Unknown error'));
+                    }
+                } catch (e) {
+                    alert('Create file failed: ' + e.message);
+                }
+            }
+
+            async createFolderInPath(basePath) {
+                const folderName = prompt('Enter folder name:');
+                if (!folderName) return;
+
+                const fullPath = basePath + '/' + folderName;
+                const apiPath = fullPath.startsWith('/') ? fullPath.slice(1) : fullPath;
+
+                try {
+                    const response = await this.api('/api/create-folder', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: apiPath })
+                    });
+
+                    if (response.ok) {
+                        this.expandedPaths.add(fullPath);
+                        this.saveExpandedState();
+                        this.fetchFiles();
+                    } else {
+                        const error = await response.json();
+                        alert('Create folder failed: ' + (error.error || 'Unknown error'));
+                    }
+                } catch (e) {
+                    alert('Create folder failed: ' + e.message);
+                }
+            }
+
+            async refreshFiles() {
+                document.getElementById('explorerFiles').innerHTML = '<div class="loading">Loading...</div>';
+                await this.fetchFiles();
+            }
+
+            updateCursorInfo() {
+                if (!this.editor) return;
+
+                const position = this.editor.getPosition();
+                const selection = this.editor.getSelection();
+
+                let text = `Line ${position?.lineNumber || 1}, Column ${position?.column || 1}`;
+
+                if (selection && !selection.isEmpty()) {
+                    const selectedText = this.editor.getModel()?.getValueInRange(selection);
+                    if (selectedText) {
+                        text += ` • ${selectedText.length} chars selected`;
+                    }
+                }
+
+                document.getElementById('cursorInfo').textContent = text;
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            escapeAttr(text) {
+                return text.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            }
+        }
+
+        // Initialize app
+        const app = new XYTextApp();
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => app.init());
+        } else {
+            app.init();
+        }
+    </script>
+</body>
+
+</html>

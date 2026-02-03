@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>OAuth Demo - Windows 95</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        win95: {
+                            gray: '#c0c0c0',
+                            darkgray: '#808080',
+                            lightgray: '#dfdfdf',
+                            blue: '#000080',
+                            lightblue: '#1084d0',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+            font-size: 11px;
+        }
+
+        .win95-window {
+            background: #c0c0c0;
+            border: 2px solid;
+            border-color: #dfdfdf #404040 #404040 #dfdfdf;
+            box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #808080;
+        }
+
+        .win95-titlebar {
+            background: linear-gradient(90deg, #000080, #1084d0);
+            padding: 3px 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .win95-titlebar-inactive {
+            background: linear-gradient(90deg, #808080, #a0a0a0);
+        }
+
+        .win95-btn {
+            background: #c0c0c0;
+            border: 2px solid;
+            border-color: #dfdfdf #404040 #404040 #dfdfdf;
+            box-shadow: inset 1px 1px 0 #fff;
+            padding: 4px 16px;
+            font-size: 11px;
+            font-family: 'Tahoma', sans-serif;
+            min-width: 75px;
+            cursor: pointer;
+        }
+
+        .win95-btn:hover {
+            background: #d4d4d4;
+        }
+
+        .win95-btn:active {
+            border-color: #404040 #dfdfdf #dfdfdf #404040;
+            box-shadow: inset -1px -1px 0 #fff;
+            padding: 5px 15px 3px 17px;
+        }
+
+        .win95-btn:disabled {
+            color: #808080;
+            text-shadow: 1px 1px 0 #fff;
+            cursor: not-allowed;
+        }
+
+        .win95-inset {
+            background: #fff;
+            border: 2px solid;
+            border-color: #808080 #dfdfdf #dfdfdf #808080;
+            box-shadow: inset 1px 1px 0 #404040;
+        }
+
+        .win95-outset {
+            background: #c0c0c0;
+            border: 2px solid;
+            border-color: #dfdfdf #404040 #404040 #dfdfdf;
+        }
+
+        .win95-groupbox {
+            border: 2px groove #c0c0c0;
+            margin-top: 8px;
+            padding: 12px 8px 8px;
+            position: relative;
+            background: #c0c0c0;
+        }
+
+        .win95-groupbox-label {
+            position: absolute;
+            top: -8px;
+            left: 8px;
+            background: #c0c0c0;
+            padding: 0 4px;
+            font-weight: normal;
+        }
+
+        .win95-title-btn {
+            background: #c0c0c0;
+            border: 2px solid;
+            border-color: #dfdfdf #404040 #404040 #dfdfdf;
+            width: 16px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .win95-title-btn:active {
+            border-color: #404040 #dfdfdf #dfdfdf #404040;
+        }
+
+        .win95-statusbar {
+            background: #c0c0c0;
+            border-top: 2px solid;
+            border-color: #808080;
+            padding: 2px 4px;
+            font-size: 11px;
+        }
+
+        .win95-statusbar-section {
+            border: 1px solid;
+            border-color: #808080 #dfdfdf #dfdfdf #808080;
+            padding: 1px 8px;
+        }
+
+        .win95-divider {
+            height: 2px;
+            background: linear-gradient(to bottom, #808080 0%, #808080 50%, #fff 50%, #fff 100%);
+            margin: 8px 0;
+        }
+
+        .win95-badge {
+            display: inline-block;
+            padding: 1px 6px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .win95-badge-read {
+            background: #000080;
+            color: #fff;
+        }
+
+        .win95-badge-write {
+            background: #800000;
+            color: #fff;
+        }
+
+        .win95-badge-append {
+            background: #008000;
+            color: #fff;
+        }
+
+        .win95-icon-btn {
+            background: #c0c0c0;
+            border: 2px solid;
+            border-color: #dfdfdf #404040 #404040 #dfdfdf;
+            padding: 4px 8px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 60px;
+        }
+
+        .win95-icon-btn:active {
+            border-color: #404040 #dfdfdf #dfdfdf #404040;
+        }
+
+        .win95-icon-btn span {
+            margin-top: 4px;
+            font-size: 10px;
+            text-align: center;
+        }
+
+        .desktop-icon {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 4px;
+            cursor: pointer;
+            color: #fff;
+            text-shadow: 1px 1px 0 #000;
+            width: 70px;
+        }
+
+        .desktop-icon:hover {
+            background: rgba(0, 0, 128, 0.5);
+        }
+
+        .desktop-icon span {
+            font-size: 10px;
+            text-align: center;
+            margin-top: 4px;
+        }
+
+        .win95-menu {
+            background: #c0c0c0;
+            border: 2px solid;
+            border-color: #dfdfdf #404040 #404040 #dfdfdf;
+            box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .win95-menu-item {
+            padding: 2px 20px;
+            cursor: pointer;
+        }
+
+        .win95-menu-item:hover {
+            background: #000080;
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body class="bg-[#008080] min-h-screen p-2 md:p-4">
+    <!-- Desktop Icons -->
+    <div class="fixed top-4 left-4 flex flex-col gap-4">
+        <div class="desktop-icon" ondblclick="showAbout()">
+            <span class="text-4xl">💻</span>
+            <span>My Computer</span>
+        </div>
+        <div class="desktop-icon" ondblclick="location.reload()">
+            <span class="text-4xl">🔐</span>
+            <span>OAuth Demo</span>
+        </div>
+    </div>
+
+    <div class="flex items-center justify-center min-h-screen">
+        <div class="w-full max-w-3xl">
+            <!-- Main Window -->
+            <div class="win95-window" id="mainWindow">
+                <div class="win95-titlebar">
+                    <div class="flex items-center">
+                        <span class="text-white font-bold text-xs">🔐 OAuth 2.0 Demo</span>
+                    </div>
+                    <div class="flex gap-[2px]">
+                        <button class="win95-title-btn" title="Minimize">_</button>
+                        <button class="win95-title-btn" title="Maximize">□</button>
+                        <button class="win95-title-btn" title="Close" onclick="window.close()">×</button>
+                    </div>
+                </div>
+
+                <!-- Menu Bar -->
+                <div class="bg-[#c0c0c0] border-b border-gray-400 px-1 py-[2px] flex gap-4">
+                    <span class="px-1 hover:bg-[#000080] hover:text-white cursor-pointer">File</span>
+                    <span class="px-1 hover:bg-[#000080] hover:text-white cursor-pointer">Edit</span>
+                    <span class="px-1 hover:bg-[#000080] hover:text-white cursor-pointer">View</span>
+                    <span class="px-1 hover:bg-[#000080] hover:text-white cursor-pointer">Help</span>
+                </div>
+
+                <div class="p-3">
+                    <!-- Header -->
+                    <div class="win95-inset p-3 mb-4">
+                        <div class="flex items-center">
+                            <span class="text-4xl mr-3">🛡️</span>
+                            <div>
+                                <h1 class="font-bold text-lg">OAuth 2.0 Demo</h1>
+                                <p class="text-[10px] text-gray-600">Test the OAuth flow with different scope
+                                    configurations</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Demo Scenarios Grid -->
+                    <div class="grid md:grid-cols-2 gap-3 mb-4">
+                        <!-- Variable Scopes -->
+                        <div class="win95-groupbox">
+                            <span class="win95-groupbox-label">📂 Variable Scopes</span>
+                            <p class="text-[10px] mb-3">Let the user choose specific resources:</p>
+
+                            <div class="win95-inset p-2 mb-3 bg-white">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="win95-badge win95-badge-read">READ</span>
+                                    <span class="text-[10px]">read:{resource}</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="win95-badge win95-badge-write">WRITE</span>
+                                    <span class="text-[10px]">write:{resource}</span>
+                                </div>
+                            </div>
+
+                            <button onclick="startVariableFlow()" class="win95-btn w-full">
+                                ▶️ Start Variable Flow
+                            </button>
+                        </div>
+
+                        <!-- Specific Scopes -->
+                        <div class="win95-groupbox">
+                            <span class="win95-groupbox-label">📄 Specific Scopes</span>
+                            <p class="text-[10px] mb-3">Request specific file permissions:</p>
+
+                            <div class="win95-inset p-2 mb-3 bg-white">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="win95-badge win95-badge-read">READ</span>
+                                    <span class="text-[10px]">documents/readme.md</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="win95-badge win95-badge-write">WRITE</span>
+                                    <span class="text-[10px]">config/settings.json</span>
+                                </div>
+                            </div>
+
+                            <button onclick="startSpecificFlow()" class="win95-btn w-full">
+                                ▶️ Start Specific Flow
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Mixed Demo -->
+                    <div class="win95-groupbox mb-4">
+                        <span class="win95-groupbox-label">🔀 Mixed Scopes Demo</span>
+                        <p class="text-[10px] mb-3">Combine variable and specific scopes in one request:</p>
+
+                        <div class="grid md:grid-cols-2 gap-3 mb-3">
+                            <div class="win95-inset p-2 bg-white">
+                                <div class="font-bold text-[10px] mb-1">Variable:</div>
+                                <div class="flex items-center gap-2">
+                                    <span class="win95-badge win95-badge-append">APPEND</span>
+                                    <span class="text-[10px]">append:{resource}</span>
+                                </div>
+                            </div>
+                            <div class="win95-inset p-2 bg-white">
+                                <div class="font-bold text-[10px] mb-1">Specific:</div>
+                                <div class="flex items-center gap-2">
+                                    <span class="win95-badge win95-badge-read">READ</span>
+                                    <span class="text-[10px]">logs/app.log</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button onclick="startMixedFlow()" class="win95-btn w-full">
+                            ▶️ Start Mixed Flow
+                        </button>
+                    </div>
+
+                    <!-- Results -->
+                    <div id="results" class="win95-groupbox" style="display: none;">
+                        <span class="win95-groupbox-label">✅ Results</span>
+                        <div id="resultContent"></div>
+                    </div>
+                </div>
+
+                <!-- Status Bar -->
+                <div class="win95-statusbar flex justify-between items-center">
+                    <span class="win95-statusbar-section">Ready</span>
+                    <span class="win95-statusbar-section" id="clock"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Taskbar -->
+    <div class="fixed bottom-0 left-0 right-0 win95-outset h-8 flex items-center px-1">
+        <button class="win95-btn flex items-center gap-1 py-1 px-2" onclick="showStartMenu()">
+            <span class="text-lg">🪟</span>
+            <span class="font-bold">Start</span>
+        </button>
+        <div class="win95-divider w-px h-6 mx-2"></div>
+        <div class="win95-inset flex-1 mx-1 px-2 py-1 text-[10px]">
+            🔐 OAuth 2.0 Demo
+        </div>
+        <div class="win95-inset px-2 py-1 text-[10px]" id="taskbarClock"></div>
+    </div>
+
+    <script>
+        const CLIENT_ID = window.location.host;
+        const REDIRECT_URI = window.location.origin + '/demo.html';
+
+        // Update clocks
+        function updateClocks() {
+            const now = new Date();
+            const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            document.getElementById('clock').textContent = now.toLocaleDateString();
+            document.getElementById('taskbarClock').textContent = time;
+        }
+        updateClocks();
+        setInterval(updateClocks, 1000);
+
+        function generateCodeVerifier() {
+            const array = new Uint8Array(32);
+            crypto.getRandomValues(array);
+            return btoa(String.fromCharCode.apply(null, Array.from(array)))
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+
+        async function generateCodeChallenge(verifier) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(verifier);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(digest))))
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+
+        async function startOAuthFlow(scopes) {
+            const codeVerifier = generateCodeVerifier();
+            const codeChallenge = await generateCodeChallenge(codeVerifier);
+            const state = generateCodeVerifier();
+
+            localStorage.setItem('oauth_code_verifier', codeVerifier);
+            localStorage.setItem('oauth_state', state);
+
+            const authUrl = new URL(window.location.origin + '/authorize');
+            authUrl.searchParams.set('response_type', 'code');
+            authUrl.searchParams.set('client_id', CLIENT_ID);
+            authUrl.searchParams.set('redirect_uri', REDIRECT_URI);
+            authUrl.searchParams.set('scope', scopes);
+            authUrl.searchParams.set('state', state);
+            authUrl.searchParams.set('code_challenge', codeChallenge);
+            authUrl.searchParams.set('code_challenge_method', 'S256');
+
+            window.location.href = authUrl.toString();
+        }
+
+        function startVariableFlow() {
+            startOAuthFlow('read:{resource} write:{resource}');
+        }
+
+        function startSpecificFlow() {
+            startOAuthFlow('read:documents/readme.md write:config/settings.json');
+        }
+
+        function startMixedFlow() {
+            startOAuthFlow('append:{resource} read:logs/app.log');
+        }
+
+        async function handleCallback() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const state = urlParams.get('state');
+            const error = urlParams.get('error');
+
+            if (error) {
+                showError('OAuth Error: ' + error);
+                return;
+            }
+
+            if (!code || !state) {
+                return;
+            }
+
+            const storedState = localStorage.getItem('oauth_state');
+            const codeVerifier = localStorage.getItem('oauth_code_verifier');
+
+            if (state !== storedState) {
+                showError('Invalid state parameter');
+                return;
+            }
+
+            try {
+                const tokenResponse = await fetch(window.location.origin + '/token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        grant_type: 'authorization_code',
+                        code: code,
+                        client_id: CLIENT_ID,
+                        redirect_uri: REDIRECT_URI,
+                        code_verifier: codeVerifier,
+                        resource: window.location.origin
+                    })
+                });
+
+                if (!tokenResponse.ok) {
+                    throw new Error('Token exchange failed');
+                }
+
+                const tokenData = await tokenResponse.json();
+
+                const userResponse = await fetch(window.location.origin + '/me', {
+                    headers: {
+                        'Authorization': 'Bearer ' + tokenData.access_token
+                    }
+                });
+
+                if (!userResponse.ok) {
+                    throw new Error('Failed to get user info');
+                }
+
+                const userData = await userResponse.json();
+
+                showResults(tokenData, userData);
+
+                localStorage.removeItem('oauth_code_verifier');
+                localStorage.removeItem('oauth_state');
+
+                window.history.replaceState({}, document.title, window.location.pathname);
+
+            } catch (error) {
+                showError('Error completing OAuth flow: ' + error.message);
+            }
+        }
+
+        function showResults(tokenData, userData) {
+            const resultsDiv = document.getElementById('results');
+            const resultContent = document.getElementById('resultContent');
+
+            resultContent.innerHTML = `
+                <div class="win95-inset p-2 mb-3 bg-[#ccffcc]">
+                    <div class="flex items-start">
+                        <span class="text-2xl mr-2">✅</span>
+                        <div>
+                            <div class="font-bold">Access Token Obtained!</div>
+                            <div class="text-[10px]">Type: ${tokenData.token_type}</div>
+                            <div class="text-[10px]">Scopes: ${tokenData.scope}</div>
+                            <div class="win95-inset p-1 mt-1 text-[9px] font-mono break-all bg-white">
+                                ${tokenData.access_token.substring(0, 50)}...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="win95-inset p-2 mb-3 bg-[#ccccff]">
+                    <div class="flex items-start">
+                        <img src="${userData.profile_image_url || 'https://via.placeholder.com/32'}"
+                             class="w-8 h-8 mr-2">
+                        <div>
+                            <div class="font-bold">${userData.name}</div>
+                            <div class="text-[10px]">@${userData.username}</div>
+                            <div class="mt-1">
+                                <div class="text-[10px] font-bold">Granted Scopes:</div>
+                                <div class="flex flex-wrap gap-1 mt-1">
+                                    ${userData.scopes.map(scope => `
+                                        <span class="win95-badge" style="background:#000080;color:#fff;">${scope}</span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-center">
+                    <button onclick="location.reload()" class="win95-btn">
+                        🔄 Start Over
+                    </button>
+                </div>
+            `;
+
+            resultsDiv.style.display = 'block';
+            resultsDiv.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showError(message) {
+            const resultsDiv = document.getElementById('results');
+            const resultContent = document.getElementById('resultContent');
+
+            resultContent.innerHTML = `
+                <div class="win95-inset p-2 mb-3 bg-[#ffcccc]">
+                    <div class="flex items-start">
+                        <span class="text-2xl mr-2">❌</span>
+                        <div>
+                            <div class="font-bold">Error</div>
+                            <div class="text-[10px]">${message}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-center">
+                    <button onclick="location.reload()" class="win95-btn">
+                        🔄 Try Again
+                    </button>
+                </div>
+            `;
+
+            resultsDiv.style.display = 'block';
+            resultsDiv.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showAbout() {
+            alert('OAuth 2.0 Demo\nVersion 1.0\n\nA Windows 95 styled OAuth demonstration.');
+        }
+
+        function showStartMenu() {
+            alert('Start Menu not implemented in this demo!');
+        }
+
+        window.addEventListener('DOMContentLoaded', handleCallback);
+    </script>
+</body>
+
+</html>

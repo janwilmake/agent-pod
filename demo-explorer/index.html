@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Pod File Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: #fff;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 1.5rem;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .login-button,
+        .logout-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .logout-button {
+            background: #dc3545;
+        }
+
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: #fff;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .create-button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 0.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            flex: 1;
+        }
+
+        .file-tree {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+        }
+
+        .file-item,
+        .folder-item {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 1px 0;
+            user-select: none;
+        }
+
+        .file-item:hover,
+        .folder-item:hover {
+            background: #f0f0f0;
+        }
+
+        .file-item.selected {
+            background: #007bff;
+            color: white;
+        }
+
+        .folder-icon,
+        .file-icon {
+            margin-right: 0.5rem;
+            width: 16px;
+        }
+
+        .folder-children {
+            margin-left: 1rem;
+        }
+
+        .main-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #fff;
+        }
+
+        .editor-header {
+            padding: 1rem;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .editor-header h2 {
+            color: #333;
+            font-size: 1.2rem;
+        }
+
+        .save-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .editor {
+            flex: 1;
+            padding: 1rem;
+        }
+
+        .editor textarea {
+            width: 100%;
+            height: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+        }
+
+        .welcome-message {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 1rem;
+            margin: 0.5rem;
+            border-radius: 4px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            padding: 2rem;
+            border-radius: 8px;
+            width: 400px;
+            max-width: 90%;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .close {
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .context-menu {
+            position: absolute;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            min-width: 150px;
+        }
+
+        .context-menu-item {
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+
+        .context-menu-item:hover {
+            background: #f0f0f0;
+        }
+
+        .context-menu-item:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>Agent Pod File Manager</h1>
+        <div class="user-info">
+            <span id="userInfo"></span>
+            <button id="loginButton" class="login-button" onclick="startAuth()">Login</button>
+            <button id="logoutButton" class="logout-button" onclick="logout()" style="display: none;">Logout</button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <button class="create-button" onclick="showCreateFileModal()">New File</button>
+                <button class="create-button" onclick="showCreateFolderModal()">New Folder</button>
+            </div>
+            <div class="file-tree" id="fileTree">
+                <div class="loading">Loading files...</div>
+            </div>
+        </div>
+
+        <div class="main-panel">
+            <div class="editor-header" id="editorHeader" style="display: none;">
+                <h2 id="currentFileName">No file selected</h2>
+                <button class="save-button" onclick="saveCurrentFile()">Save</button>
+            </div>
+            <div class="editor" id="editor">
+                <div class="welcome-message">
+                    Select a file to start editing or create a new file
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create File Modal -->
+    <div id="createFileModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create New File</h3>
+                <span class="close" onclick="closeModal('createFileModal')">&times;</span>
+            </div>
+            <div class="form-group">
+                <label>File Path (auto-prefixed with your username):</label>
+                <input type="text" id="newFilePath" placeholder="e.g., documents/readme.md">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn-secondary" onclick="closeModal('createFileModal')">Cancel</button>
+                <button class="create-button" onclick="createFile()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Folder Modal -->
+    <div id="createFolderModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create New Folder</h3>
+                <span class="close" onclick="closeModal('createFolderModal')">&times;</span>
+            </div>
+            <div class="form-group">
+                <label>Folder Path (auto-prefixed with your username):</label>
+                <input type="text" id="newFolderPath" placeholder="e.g., documents/projects">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn-secondary" onclick="closeModal('createFolderModal')">Cancel</button>
+                <button class="create-button" onclick="createFolder()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="contextMenu" class="context-menu" style="display: none;">
+        <div class="context-menu-item" onclick="renameItem()">Rename</div>
+        <div class="context-menu-item" onclick="deleteItem()">Delete</div>
+        <div class="context-menu-item" onclick="copyItem()">Copy</div>
+        <div class="context-menu-item" onclick="moveItem()">Move</div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://server.agent-pod.com';
+        let currentUser = null;
+        let currentFile = null;
+        let currentFilePath = null;
+        let files = [];
+        let contextMenuTarget = null;
+
+        // OAuth 2.0 Helper Functions
+        function generateCodeVerifier() {
+            const array = new Uint8Array(32);
+            crypto.getRandomValues(array);
+            return btoa(String.fromCharCode.apply(null, Array.from(array)))
+                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        async function generateCodeChallenge(verifier) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(verifier);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(digest))))
+                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        // Authentication Functions
+        async function startAuth() {
+            const codeVerifier = generateCodeVerifier();
+            const codeChallenge = await generateCodeChallenge(codeVerifier);
+            const state = generateCodeVerifier();
+
+            localStorage.setItem('code_verifier', codeVerifier);
+            localStorage.setItem('oauth_state', state);
+
+            const authUrl = new URL(`${API_BASE}/authorize`);
+            authUrl.searchParams.set('response_type', 'code');
+            authUrl.searchParams.set('client_id', window.location.host);
+            authUrl.searchParams.set('redirect_uri', window.location.origin + window.location.pathname);
+            authUrl.searchParams.set('scope', 'read:{resource} write:{resource}');
+            authUrl.searchParams.set('state', state);
+            authUrl.searchParams.set('code_challenge', codeChallenge);
+            authUrl.searchParams.set('code_challenge_method', 'S256');
+
+            window.location.href = authUrl.toString();
+        }
+
+        async function handleCallback() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const state = urlParams.get('state');
+
+            if (!code) return false;
+
+            if (state !== localStorage.getItem('oauth_state')) {
+                showError('Invalid state parameter');
+                return false;
+            }
+
+            try {
+                const tokenResponse = await fetch(`${API_BASE}/token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                        grant_type: 'authorization_code',
+                        code: code,
+                        client_id: window.location.host,
+                        redirect_uri: window.location.origin + window.location.pathname,
+                        code_verifier: localStorage.getItem('code_verifier'),
+                        resource: API_BASE
+                    })
+                });
+
+                const tokenData = await tokenResponse.json();
+                if (!tokenResponse.ok) {
+                    throw new Error(tokenData.error_description || 'Token exchange failed');
+                }
+
+                localStorage.setItem('access_token', tokenData.access_token);
+                localStorage.removeItem('code_verifier');
+                localStorage.removeItem('oauth_state');
+
+                // Clear URL parameters
+                window.history.replaceState({}, document.title, window.location.pathname);
+
+                return true;
+            } catch (error) {
+                showError('Authentication failed: ' + error.message);
+                return false;
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('access_token');
+            currentUser = null;
+            updateUI();
+            document.getElementById('fileTree').innerHTML = '<div class="loading">Please log in to view files</div>';
+            showWelcomeMessage();
+        }
+
+        // API Functions
+        async function apiRequest(endpoint, options = {}) {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                throw new Error('No access token');
+            }
+
+            const response = await fetch(`${API_BASE}${endpoint}`, {
+                ...options,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    ...options.headers
+                }
+            });
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: 'Request failed' }));
+                throw new Error(error.error_description || error.error || 'Request failed');
+            }
+
+            return response;
+        }
+
+        async function getCurrentUser() {
+            const response = await apiRequest('/me');
+            return await response.json();
+        }
+
+        async function getFiles() {
+            const response = await apiRequest('/');
+            return await response.json();
+        }
+
+        async function getFileContent(path) {
+            const response = await apiRequest(`/${path}`);
+            return await response.json();
+        }
+
+        async function saveFile(path, content) {
+            await apiRequest(`/${path}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'text/plain' },
+                body: content
+            });
+        }
+
+        async function createNewFile(path, content = '') {
+            await apiRequest('/api/create-file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path, content })
+            });
+        }
+
+        async function createNewFolder(path) {
+            await apiRequest('/api/create-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
+        }
+
+        async function deleteFileOrFolder(path) {
+            await apiRequest(`/${path}`, { method: 'DELETE' });
+        }
+
+        async function renameFileOrFolder(path, newName) {
+            await apiRequest('/api/rename-node', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path, newName })
+            });
+        }
+
+        // UI Functions
+        function updateUI() {
+            const loginButton = document.getElementById('loginButton');
+            const logoutButton = document.getElementById('logoutButton');
+            const userInfo = document.getElementById('userInfo');
+
+            if (currentUser) {
+                loginButton.style.display = 'none';
+                logoutButton.style.display = 'block';
+                userInfo.textContent = `Welcome, ${currentUser.name || currentUser.username}`;
+            } else {
+                loginButton.style.display = 'block';
+                logoutButton.style.display = 'none';
+                userInfo.textContent = '';
+            }
+        }
+
+        function renderFileTree(fileList) {
+            const fileTree = document.getElementById('fileTree');
+
+            if (!fileList || fileList.length === 0) {
+                fileTree.innerHTML = '<div class="loading">No files found</div>';
+                return;
+            }
+
+            // Sort files: folders first, then files, both alphabetically
+            const sorted = [...fileList].sort((a, b) => {
+                if (a.type === 'folder' && b.type !== 'folder') return -1;
+                if (a.type !== 'folder' && b.type === 'folder') return 1;
+                return a.path.localeCompare(b.path);
+            });
+
+            const tree = buildFileTree(sorted);
+            fileTree.innerHTML = renderTree(tree);
+        }
+
+        function buildFileTree(fileList) {
+            const tree = {};
+
+            fileList.forEach(file => {
+                const pathParts = file.path.replace(/^\/[^\/]+\//, '').split('/');
+                let current = tree;
+
+                pathParts.forEach((part, index) => {
+                    if (!current[part]) {
+                        current[part] = {
+                            name: part,
+                            type: index === pathParts.length - 1 ? file.type : 'folder',
+                            fullPath: file.path,
+                            children: {}
+                        };
+                    }
+                    current = current[part].children;
+                });
+            });
+
+            return tree;
+        }
+
+        function renderTree(tree, level = 0) {
+            let html = '';
+
+            Object.values(tree).forEach(node => {
+                const indent = 'margin-left: ' + (level * 20) + 'px';
+                const icon = node.type === 'folder' ? '📁' : '📄';
+                const className = node.type === 'folder' ? 'folder-item' : 'file-item';
+
+                html += `<div class="${className}" style="${indent}" 
+                         onclick="handleItemClick('${node.fullPath}', '${node.type}')"
+                         oncontextmenu="showContextMenu(event, '${node.fullPath}', '${node.type}')">
+                    <span class="${node.type}-icon">${icon}</span>
+                    <span>${node.name}</span>
+                </div>`;
+
+                if (node.type === 'folder' && Object.keys(node.children).length > 0) {
+                    html += renderTree(node.children, level + 1);
+                }
+            });
+
+            return html;
+        }
+
+        async function handleItemClick(path, type) {
+            if (type === 'file') {
+                await openFile(path);
+            }
+            // For folders, we could implement expand/collapse logic here
+        }
+
+        async function openFile(path) {
+            try {
+                showEditor();
+                document.getElementById('currentFileName').textContent = 'Loading...';
+
+                const fileData = await getFileContent(path.replace(/^\/[^\/]+\//, ''));
+
+                currentFile = fileData.content || '';
+                currentFilePath = path.replace(/^\/[^\/]+\//, '');
+
+                document.getElementById('currentFileName').textContent = currentFilePath;
+                document.getElementById('fileContent').value = currentFile;
+
+                // Highlight selected file
+                document.querySelectorAll('.file-item').forEach(item => {
+                    item.classList.remove('selected');
+                });
+                event.target.closest('.file-item')?.classList.add('selected');
+
+            } catch (error) {
+                showError('Failed to open file: ' + error.message);
+            }
+        }
+
+        function showEditor() {
+            const editorHeader = document.getElementById('editorHeader');
+            const editor = document.getElementById('editor');
+
+            editorHeader.style.display = 'flex';
+            editor.innerHTML = '<textarea id="fileContent" placeholder="Enter file content..."></textarea>';
+        }
+
+        function showWelcomeMessage() {
+            const editorHeader = document.getElementById('editorHeader');
+            const editor = document.getElementById('editor');
+
+            editorHeader.style.display = 'none';
+            editor.innerHTML = '<div class="welcome-message">Select a file to start editing or create a new file</div>';
+        }
+
+        async function saveCurrentFile() {
+            if (!currentFilePath) {
+                showError('No file selected');
+                return;
+            }
+
+            try {
+                const content = document.getElementById('fileContent').value;
+                await saveFile(currentFilePath, content);
+                currentFile = content;
+                showSuccess('File saved successfully');
+            } catch (error) {
+                showError('Failed to save file: ' + error.message);
+            }
+        }
+
+        // Modal Functions
+        function showCreateFileModal() {
+            document.getElementById('createFileModal').style.display = 'block';
+            document.getElementById('newFilePath').focus();
+        }
+
+        function showCreateFolderModal() {
+            document.getElementById('createFolderModal').style.display = 'block';
+            document.getElementById('newFolderPath').focus();
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        async function createFile() {
+            const path = document.getElementById('newFilePath').value.trim();
+            if (!path) {
+                showError('Please enter a file path');
+                return;
+            }
+
+            try {
+                await createNewFile(path);
+                closeModal('createFileModal');
+                document.getElementById('newFilePath').value = '';
+                await loadFiles();
+                showSuccess('File created successfully');
+            } catch (error) {
+                showError('Failed to create file: ' + error.message);
+            }
+        }
+
+        async function createFolder() {
+            const path = document.getElementById('newFolderPath').value.trim();
+            if (!path) {
+                showError('Please enter a folder path');
+                return;
+            }
+
+            try {
+                await createNewFolder(path);
+                closeModal('createFolderModal');
+                document.getElementById('newFolderPath').value = '';
+                await loadFiles();
+                showSuccess('Folder created successfully');
+            } catch (error) {
+                showError('Failed to create folder: ' + error.message);
+            }
+        }
+
+        // Context Menu Functions
+        function showContextMenu(event, path, type) {
+            event.preventDefault();
+            contextMenuTarget = { path: path.replace(/^\/[^\/]+\//, ''), type };
+
+            const contextMenu = document.getElementById('contextMenu');
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = event.pageX + 'px';
+            contextMenu.style.top = event.pageY + 'px';
+        }
+
+        function hideContextMenu() {
+            document.getElementById('contextMenu').style.display = 'none';
+            contextMenuTarget = null;
+        }
+
+        async function renameItem() {
+            if (!contextMenuTarget) return;
+
+            const newName = prompt('Enter new name:', contextMenuTarget.path.split('/').pop());
+            if (!newName) return;
+
+            try {
+                await renameFileOrFolder(contextMenuTarget.path, newName);
+                await loadFiles();
+                showSuccess('Item renamed successfully');
+            } catch (error) {
+                showError('Failed to rename: ' + error.message);
+            } finally {
+                hideContextMenu();
+            }
+        }
+
+        async function deleteItem() {
+            if (!contextMenuTarget) return;
+
+            if (!confirm(`Are you sure you want to delete "${contextMenuTarget.path}"?`)) return;
+
+            try {
+                await deleteFileOrFolder(contextMenuTarget.path);
+                await loadFiles();
+                showSuccess('Item deleted successfully');
+
+                // Clear editor if deleted file was open
+                if (currentFilePath === contextMenuTarget.path) {
+                    showWelcomeMessage();
+                    currentFilePath = null;
+                    currentFile = null;
+                }
+            } catch (error) {
+                showError('Failed to delete: ' + error.message);
+            } finally {
+                hideContextMenu();
+            }
+        }
+
+        function copyItem() {
+            // TODO: Implement copy functionality
+            showError('Copy functionality not implemented yet');
+            hideContextMenu();
+        }
+
+        function moveItem() {
+            // TODO: Implement move functionality
+            showError('Move functionality not implemented yet');
+            hideContextMenu();
+        }
+
+        // Utility Functions
+        function showError(message) {
+            // Simple error display - you could make this more sophisticated
+            alert('Error: ' + message);
+        }
+
+        function showSuccess(message) {
+            // Simple success display - you could make this more sophisticated
+            console.log('Success: ' + message);
+        }
+
+        async function loadFiles() {
+            try {
+                const data = await getFiles();
+                files = data.files || [];
+                renderFileTree(files);
+            } catch (error) {
+                showError('Failed to load files: ' + error.message);
+                document.getElementById('fileTree').innerHTML = '<div class="error">Failed to load files</div>';
+            }
+        }
+
+        // Event Listeners
+        document.addEventListener('click', hideContextMenu);
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (event) => {
+            if (event.ctrlKey || event.metaKey) {
+                if (event.key === 's') {
+                    event.preventDefault();
+                    saveCurrentFile();
+                }
+            }
+        });
+
+        // Close modals when clicking outside
+        window.addEventListener('click', (event) => {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        });
+
+        // Initialize App
+        async function init() {
+            try {
+                // Check for OAuth callback
+                const hasCallback = await handleCallback();
+
+                // Check for existing token
+                const token = localStorage.getItem('access_token');
+                if (token) {
+                    currentUser = await getCurrentUser();
+                    updateUI();
+                    await loadFiles();
+                } else {
+                    updateUI();
+                    document.getElementById('fileTree').innerHTML = '<div class="loading">Please log in to view files</div>';
+                }
+            } catch (error) {
+                console.error('Initialization error:', error);
+                logout(); // Clear any invalid tokens
+            }
+        }
+
+        // Start the app
+        init();
+    </script>
+</body>
+
+</html>

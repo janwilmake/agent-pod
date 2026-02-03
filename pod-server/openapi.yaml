@@ -1,0 +1,1885 @@
+openapi: 3.0.3
+info:
+  title: Agent Pod File System API
+  description: |
+    A file system API with OAuth 2.0 authorization that allows clients to access user files with granular permissions.
+
+    ## Authentication Flow
+
+    This API uses OAuth 2.0 with PKCE for authentication. The unique feature is that the **hostname** of your application serves as the `client_id`.
+
+    ### Quick Start
+
+    1. **Register your client** (optional - dynamic registration supported)
+    2. **Redirect user to authorization endpoint** with your hostname as `client_id`
+    3. **User grants permissions** for specific files/folders
+    4. **Exchange authorization code** for access token
+    5. **Access files** using the Bearer token
+
+    ### Scopes
+
+    - `read` - Read access to all files
+    - `write` - Write access to all files  
+    - `append` - Append access to all files
+    - `read:path/to/file` - Read access to specific file
+    - `write:path/to/file` - Write access to specific file
+    - `append:path/to/file` - Append access to specific file
+    - `read:{resource}` - Variable scope (user selects resources)
+    - `write:{resource}` - Variable scope (user selects resources)
+    - `append:{resource}` - Variable scope (user selects resources)
+
+    ### Example Authorization URL
+    ```
+    https://server.agent-pod.com/authorize?response_type=code&client_id=myapp.example.com&redirect_uri=https://myapp.example.com/callback&scope=read:{resource} write:{resource}&code_challenge=ABC123&code_challenge_method=S256
+    ```
+
+  version: 2.0.0
+  contact:
+    name: Agent Pod Support
+    url: https://server.agent-pod.com
+  license:
+    name: MIT
+servers:
+  - url: https://server.agent-pod.com
+    description: Production server
+
+tags:
+  - name: OAuth Provider
+    description: |
+      OAuth 2.0 provider endpoints for downstream applications to authenticate users.
+  - name: OAuth Client
+    description: |
+      OAuth 2.0 client endpoints for authenticating with upstream X (Twitter) provider.
+  - name: File Operations
+    description: |
+      Core file system operations (CRUD) on user files and folders.
+  - name: File Management API
+    description: |
+      JSON API endpoints for file/folder management operations.
+  - name: Search API
+    description: |
+      Server-side search operations including grep, find, and content analysis.
+  - name: Admin
+    description: |
+      Administrative endpoints for database access and debugging.
+  - name: WebSocket
+    description: |
+      Real-time collaborative editing via WebSocket connections.
+
+paths:
+  /.well-known/oauth-authorization-server:
+    get:
+      tags:
+        - OAuth Provider
+      summary: OAuth 2.0 Authorization Server Metadata
+      description: Returns OAuth 2.0 authorization server metadata as per RFC 8414
+      responses:
+        "200":
+          description: Authorization server metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issuer:
+                    type: string
+                    example: "https://server.agent-pod.com"
+                  authorization_endpoint:
+                    type: string
+                    example: "https://server.agent-pod.com/authorize"
+                  token_endpoint:
+                    type: string
+                    example: "https://server.agent-pod.com/token"
+                  registration_endpoint:
+                    type: string
+                    example: "https://server.agent-pod.com/register"
+                  response_types_supported:
+                    type: array
+                    items:
+                      type: string
+                    example: ["code"]
+                  grant_types_supported:
+                    type: array
+                    items:
+                      type: string
+                    example: ["authorization_code"]
+                  code_challenge_methods_supported:
+                    type: array
+                    items:
+                      type: string
+                    example: ["S256"]
+                  scopes_supported:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                      [
+                        "read:{resource}",
+                        "write:{resource}",
+                        "append:{resource}",
+                      ]
+
+  /.well-known/oauth-protected-resource:
+    get:
+      tags:
+        - OAuth Provider
+      summary: OAuth 2.0 Protected Resource Metadata
+      description: Returns OAuth 2.0 protected resource metadata as per RFC 8707
+      responses:
+        "200":
+          description: Protected resource metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resource:
+                    type: string
+                    example: "https://server.agent-pod.com"
+                  authorization_servers:
+                    type: array
+                    items:
+                      type: string
+                    example: ["https://server.agent-pod.com"]
+                  scopes_supported:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                      [
+                        "read:{resource}",
+                        "write:{resource}",
+                        "append:{resource}",
+                      ]
+                  bearer_methods_supported:
+                    type: array
+                    items:
+                      type: string
+                    example: ["header"]
+
+  /register:
+    post:
+      tags:
+        - OAuth Provider
+      summary: Dynamic Client Registration
+      description: |
+        Register a new OAuth client using dynamic registration (RFC 7591).
+        The `client_id` will be set to the hostname from your redirect URIs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - redirect_uris
+              properties:
+                redirect_uris:
+                  type: array
+                  items:
+                    type: string
+                    format: uri
+                  description: All URIs must have the same hostname which becomes your client_id
+                  example:
+                    [
+                      "https://myapp.example.com/callback",
+                      "https://myapp.example.com/oauth",
+                    ]
+      responses:
+        "201":
+          description: Client registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client_id:
+                    type: string
+                    description: The hostname from your redirect URIs
+                    example: "myapp.example.com"
+                  redirect_uris:
+                    type: array
+                    items:
+                      type: string
+                    example: ["https://myapp.example.com/callback"]
+                  token_endpoint_auth_method:
+                    type: string
+                    example: "none"
+                  grant_types:
+                    type: array
+                    items:
+                      type: string
+                    example: ["authorization_code"]
+                  response_types:
+                    type: array
+                    items:
+                      type: string
+                    example: ["code"]
+        "400":
+          description: Invalid client metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /authorize:
+    get:
+      tags:
+        - OAuth Client
+      summary: OAuth 2.0 Authorization Endpoint
+      description: |
+        Initiates the OAuth 2.0 authorization flow. User will be redirected to login if not authenticated,
+        then presented with a consent screen to grant permissions.
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code]
+          description: Must be "code"
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Your application's hostname (e.g., "myapp.example.com")
+          example: "myapp.example.com"
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Where to redirect after authorization
+          example: "https://myapp.example.com/callback"
+        - name: scope
+          in: query
+          schema:
+            type: string
+          description: Space-separated list of requested scopes
+          example: "read:{resource} write:{resource}"
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: CSRF protection parameter
+        - name: code_challenge
+          in: query
+          required: true
+          schema:
+            type: string
+          description: PKCE code challenge
+        - name: code_challenge_method
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [S256]
+          description: Must be "S256"
+        - name: resource
+          in: query
+          schema:
+            type: string
+          description: Target resource server (optional)
+      responses:
+        "302":
+          description: Redirect to X provider or consent page
+        "400":
+          description: Invalid request parameters
+
+  /token:
+    post:
+      tags:
+        - OAuth Provider
+      summary: OAuth 2.0 Token Endpoint
+      description: Exchange authorization code for access token
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - grant_type
+                - code
+                - client_id
+                - redirect_uri
+                - code_verifier
+              properties:
+                grant_type:
+                  type: string
+                  enum: [authorization_code]
+                code:
+                  type: string
+                  description: Authorization code from /authorize
+                client_id:
+                  type: string
+                  description: Your application's hostname
+                  example: "myapp.example.com"
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: Same redirect_uri used in /authorize
+                code_verifier:
+                  type: string
+                  description: PKCE code verifier
+                resource:
+                  type: string
+                  description: Target resource server
+                  example: "https://server.agent-pod.com"
+      responses:
+        "200":
+          description: Access token issued successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: Bearer access token
+                    example: "resource_ABC123..."
+                  token_type:
+                    type: string
+                    example: "bearer"
+                  scope:
+                    type: string
+                    description: Space-separated granted scopes
+                    example: "read:documents/readme.md write:config/app.json"
+        "400":
+          description: Invalid token request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /me:
+    get:
+      tags:
+        - OAuth Provider
+      summary: Get Current User Info
+      description: Returns information about the authenticated user and their granted scopes
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: User information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: User's unique ID
+                  name:
+                    type: string
+                    description: User's display name
+                    example: "John Doe"
+                  username:
+                    type: string
+                    description: User's username
+                    example: "johndoe"
+                  profile_image_url:
+                    type: string
+                    format: uri
+                    description: URL to user's profile image
+                  verified:
+                    type: boolean
+                    description: Whether user is verified
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+                    description: List of granted scopes
+                    example:
+                      ["read:documents/readme.md", "write:config/app.json"]
+        "401":
+          description: Invalid or missing access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /:
+    get:
+      tags:
+        - File Operations
+      summary: List User Files
+      description: Returns a list of all files belonging to the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: File listing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                    example: "johndoe"
+                  files:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FileInfo"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions (need 'read' scope)
+
+  /{path}:
+    get:
+      tags:
+        - File Operations
+      summary: Get File or Folder
+      description: |
+        Retrieve file content or folder contents. Requires appropriate read permissions.
+        - For files: returns file content and metadata
+        - For folders: returns list of children
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File or folder path (without leading slash for user files)
+          example: "documents/readme.md"
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: File content or folder listing
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/FileContent"
+                  - $ref: "#/components/schemas/FolderContent"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: File not found
+
+    put:
+      tags:
+        - File Operations
+      summary: Create or Update File
+      description: Create a new file or update existing file content. Requires write permissions.
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File path (without leading slash for user files)
+          example: "documents/readme.md"
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+              description: File content
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: File updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions (need write scope for this path)
+
+    delete:
+      tags:
+        - File Operations
+      summary: Delete File or Folder
+      description: Delete a file or folder and all its contents. Requires write permissions.
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File or folder path to delete
+          example: "documents/old-file.md"
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: File deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: File not found
+
+  /api/create-file:
+    post:
+      tags:
+        - File Management API
+      summary: Create New File
+      description: Create a new file with specified content
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: File path to create
+                  example: "documents/new-file.md"
+                content:
+                  type: string
+                  description: Initial file content
+                  default: ""
+      responses:
+        "200":
+          description: File created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "400":
+          description: File already exists or invalid path
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+
+  /api/create-folder:
+    post:
+      tags:
+        - File Management API
+      summary: Create New Folder
+      description: Create a new folder
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: Folder path to create
+                  example: "documents/new-folder"
+      responses:
+        "200":
+          description: Folder created successfully
+        "400":
+          description: Folder already exists or invalid path
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+
+  /api/move-node:
+    post:
+      tags:
+        - File Management API
+      summary: Move File or Folder
+      description: Move a file or folder to a new location
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sourcePath
+                - targetPath
+              properties:
+                sourcePath:
+                  type: string
+                  description: Current path of file/folder
+                  example: "documents/old-location/file.md"
+                targetPath:
+                  type: string
+                  description: New path for file/folder
+                  example: "documents/new-location/file.md"
+      responses:
+        "200":
+          description: File/folder moved successfully
+        "400":
+          description: Invalid paths or target exists
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+
+  /api/copy-node:
+    post:
+      tags:
+        - File Management API
+      summary: Copy File or Folder
+      description: Copy a file or folder to a new location
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sourcePath
+                - targetPath
+              properties:
+                sourcePath:
+                  type: string
+                  description: Path of file/folder to copy
+                  example: "documents/source-file.md"
+                targetPath:
+                  type: string
+                  description: Destination path for copy
+                  example: "documents/copy-of-file.md"
+      responses:
+        "200":
+          description: File/folder copied successfully
+        "400":
+          description: Invalid paths or target exists
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+
+  /api/rename-node:
+    post:
+      tags:
+        - File Management API
+      summary: Rename File or Folder
+      description: Rename a file or folder
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+                - newName
+              properties:
+                path:
+                  type: string
+                  description: Current path of file/folder
+                  example: "documents/old-name.md"
+                newName:
+                  type: string
+                  description: New name (just the filename, not full path)
+                  example: "new-name.md"
+      responses:
+        "200":
+          description: File/folder renamed successfully
+        "400":
+          description: Invalid name or name already exists
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+
+  /api/delete-node:
+    post:
+      tags:
+        - File Management API
+      summary: Delete File or Folder (POST)
+      description: |
+        Alternative endpoint to delete a file or folder using POST method.
+        Deletes the node and all its children if it's a folder.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: Path of file/folder to delete
+                  example: "documents/old-file.md"
+      responses:
+        "200":
+          description: Node deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions
+        "404":
+          description: Node not found
+
+  /api/get-next-name:
+    post:
+      tags:
+        - File Management API
+      summary: Get Next Available Filename
+      description: |
+        Returns the next available filename when a file with the given name already exists.
+        Appends incrementing numbers (e.g., file1.txt, file2.txt) until a unique name is found.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - basePath
+              properties:
+                basePath:
+                  type: string
+                  description: Base path to check for availability
+                  example: "documents/newfile.md"
+                extension:
+                  type: string
+                  description: File extension to preserve when adding numbers
+                  example: ".md"
+      responses:
+        "200":
+          description: Next available filename
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nextName:
+                    type: string
+                    description: Available path that doesn't conflict
+                    example: "/johndoe/documents/newfile2.md"
+        "401":
+          description: Unauthorized
+
+  /api/visible-nodes:
+    post:
+      tags:
+        - File Management API
+      summary: Get Visible Tree Nodes
+      description: |
+        Returns file/folder nodes visible in the file tree based on expanded paths.
+        Used by the UI to render the file explorer efficiently.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expandedPaths:
+                  type: array
+                  items:
+                    type: string
+                  description: List of expanded folder paths
+                  example: ["/johndoe/documents", "/johndoe/config"]
+      responses:
+        "200":
+          description: List of visible nodes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FileInfo"
+        "401":
+          description: Unauthorized
+
+  /api/grep:
+    post:
+      tags:
+        - Search API
+      summary: Search File Contents (grep)
+      description: |
+        Search for a pattern in file contents. Supports:
+        - Simple string matching (case-insensitive by default)
+        - Regular expression patterns
+        - Path filtering
+        - Filename pattern filtering (glob-like)
+        - Context lines before/after matches
+        - Full-text search using FTS5 (faster for large datasets)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrepRequest"
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrepResponse"
+        "400":
+          description: Invalid pattern or request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+
+  /api/find:
+    post:
+      tags:
+        - Search API
+      summary: Find Files and Folders
+      description: |
+        Find files and folders by various criteria. Supports:
+        - Name patterns (glob-like with * and ?)
+        - Type filtering (file/folder)
+        - Size filtering (min/max bytes)
+        - Date filtering (newer/older than timestamp)
+        - Directory depth limiting
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FindRequest"
+      responses:
+        "200":
+          description: Find results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FindResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+
+  /api/stat:
+    post:
+      tags:
+        - Search API
+      summary: Get File/Folder Statistics
+      description: Get detailed information about a file or folder
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: Path to file or folder
+                  example: "documents/readme.md"
+      responses:
+        "200":
+          description: File/folder statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatResult"
+        "404":
+          description: File not found
+        "401":
+          description: Unauthorized
+
+  /api/du:
+    post:
+      tags:
+        - Search API
+      summary: Get Disk Usage
+      description: Get total disk usage statistics for a path (similar to Unix du command)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                  description: Path to analyze (defaults to user root)
+                  example: "documents"
+      responses:
+        "200":
+          description: Disk usage statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DuResult"
+        "401":
+          description: Unauthorized
+
+  /api/head:
+    post:
+      tags:
+        - Search API
+      summary: Read First Lines of File
+      description: Read the first N lines of a file (similar to Unix head command)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: Path to file
+                  example: "documents/large-file.log"
+                lines:
+                  type: integer
+                  description: Number of lines to read (default 10)
+                  default: 10
+                  example: 20
+      responses:
+        "200":
+          description: File content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+                    description: First N lines of the file
+        "404":
+          description: File not found
+        "401":
+          description: Unauthorized
+
+  /api/tail:
+    post:
+      tags:
+        - Search API
+      summary: Read Last Lines of File
+      description: Read the last N lines of a file (similar to Unix tail command)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: Path to file
+                  example: "documents/large-file.log"
+                lines:
+                  type: integer
+                  description: Number of lines to read (default 10)
+                  default: 10
+                  example: 20
+      responses:
+        "200":
+          description: File content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+                    description: Last N lines of the file
+        "404":
+          description: File not found
+        "401":
+          description: Unauthorized
+
+  /api/wc:
+    post:
+      tags:
+        - Search API
+      summary: Word Count
+      description: Get line, word, character, and byte counts for a file (similar to Unix wc command)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                  description: Path to file
+                  example: "documents/readme.md"
+      responses:
+        "200":
+          description: Word count statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WcResult"
+        "404":
+          description: File not found
+        "401":
+          description: Unauthorized
+
+  /api/append:
+    post:
+      tags:
+        - Search API
+      summary: Append Content to File
+      description: |
+        Append content to the end of a file. Creates the file if it doesn't exist.
+        Requires append scope for the target path.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+                - content
+              properties:
+                path:
+                  type: string
+                  description: Path to file
+                  example: "logs/app.log"
+                content:
+                  type: string
+                  description: Content to append
+                  example: "2024-01-15 10:30:00 INFO Application started\n"
+      responses:
+        "200":
+          description: Content appended successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  path:
+                    type: string
+                    example: "/johndoe/logs/app.log"
+        "400":
+          description: Cannot append to folder
+        "401":
+          description: Unauthorized
+        "403":
+          description: Insufficient permissions (need append scope)
+
+  /llms.txt:
+    get:
+      tags:
+        - File Operations
+      summary: Get LLMs.txt File
+      description: |
+        Returns a standardized list of all user files in LLMs.txt format for AI/LLM consumption.
+        This endpoint provides an overview of available files for the authenticated user.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: LLMs.txt formatted file list
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # johndoe's Files
+
+                  This document lists all available files for johndoe.
+
+                  https://server.agent-pod.com/johndoe/documents/readme.md
+                  https://server.agent-pod.com/johndoe/config/app.json
+                  https://server.agent-pod.com/johndoe/scripts/deploy.sh
+        "401":
+          description: Unauthorized
+
+  /consent:
+    post:
+      tags:
+        - OAuth Provider
+      summary: OAuth Consent Form Submission
+      description: |
+        Handles the user's consent decision during OAuth authorization flow.
+        This endpoint processes the consent form and either grants or denies access.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - action
+                - client_id
+                - redirect_uri
+                - original_scopes
+                - user_id
+              properties:
+                action:
+                  type: string
+                  enum: [allow, deny]
+                  description: User's consent decision
+                client_id:
+                  type: string
+                  description: The requesting application's hostname
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: Where to redirect after consent
+                state:
+                  type: string
+                  description: CSRF protection parameter
+                original_scopes:
+                  type: string
+                  description: Space-separated list of requested scopes
+                selected_resources:
+                  type: string
+                  description: JSON array of user-selected resource paths for variable scopes
+                resource:
+                  type: string
+                  description: Target resource server
+                user_id:
+                  type: string
+                  description: Authenticated user's ID
+      responses:
+        "302":
+          description: Redirect to client with authorization code or error
+        "405":
+          description: Method not allowed
+
+  /studio:
+    get:
+      tags:
+        - Admin
+      summary: Studio Admin Interface
+      description: |
+        Access the Queryable Object studio interface for database administration.
+        Provides a web UI for inspecting and querying the SQLite database.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Studio HTML interface
+          content:
+            text/html:
+              schema:
+                type: string
+        "401":
+          description: Unauthorized
+
+  /exec:
+    get:
+      tags:
+        - Admin
+      summary: Execute SQL Query
+      description: |
+        Execute a SQL query directly against the user's SQLite database.
+        Use with caution - this provides direct database access.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: SQL query to execute
+          example: "SELECT * FROM nodes LIMIT 10"
+        - name: binding
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          description: Query parameter bindings (can be repeated)
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Query result rows
+        "401":
+          description: Unauthorized
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Use the access token obtained from the OAuth 2.0 flow.
+        Format: `Bearer resource_<encrypted_token>`
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error code
+        error_description:
+          type: string
+          description: Human-readable error description
+      example:
+        error: "invalid_request"
+        error_description: "Missing required parameter: client_id"
+
+    FileInfo:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Full file path
+          example: "/johndoe/documents/readme.md"
+        name:
+          type: string
+          description: File or folder name
+          example: "readme.md"
+        parent_path:
+          type: string
+          nullable: true
+          description: Path of parent folder
+          example: "/johndoe/documents"
+        created_at:
+          type: integer
+          description: Creation timestamp (Unix)
+          example: 1703001600
+        updated_at:
+          type: integer
+          description: Last modification timestamp (Unix)
+          example: 1703088000
+        type:
+          type: string
+          enum: [file, folder]
+          description: Whether this is a file or folder
+        size:
+          type: integer
+          description: File size in bytes (0 for folders)
+          example: 1024
+
+    FileContent:
+      type: object
+      properties:
+        path:
+          type: string
+          example: "/johndoe/documents/readme.md"
+        type:
+          type: string
+          enum: [file]
+        content:
+          type: string
+          description: File content as string
+          example: "# My Project\n\nThis is a sample readme file."
+        size:
+          type: integer
+          description: File size in bytes
+          example: 1024
+        created_at:
+          type: integer
+          description: Creation timestamp (Unix)
+          example: 1703001600
+        updated_at:
+          type: integer
+          description: Last modification timestamp (Unix)
+          example: 1703088000
+
+    FolderContent:
+      type: object
+      properties:
+        path:
+          type: string
+          example: "/johndoe/documents"
+        type:
+          type: string
+          enum: [folder]
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileInfo"
+          description: List of files and folders in this directory
+
+    GrepRequest:
+      type: object
+      required:
+        - pattern
+      properties:
+        pattern:
+          type: string
+          description: Search pattern (string or regex)
+          example: "function"
+        path:
+          type: string
+          description: Starting path for search (defaults to user root)
+          example: "/documents"
+        regex:
+          type: boolean
+          description: Treat pattern as regular expression
+          default: false
+        caseSensitive:
+          type: boolean
+          description: Case-sensitive search
+          default: false
+        maxResults:
+          type: integer
+          description: Maximum number of results to return
+          default: 1000
+          maximum: 10000
+        contextLines:
+          type: integer
+          description: Number of lines of context before/after match
+          default: 0
+          maximum: 10
+        filePattern:
+          type: string
+          description: Filter by filename pattern (glob-like, e.g., "*.js")
+          example: "*.js"
+        useFTS:
+          type: boolean
+          description: Use full-text search (faster but less precise)
+          default: false
+
+    GrepResult:
+      type: object
+      properties:
+        path:
+          type: string
+          description: File path where match was found
+          example: "/johndoe/documents/app.js"
+        line:
+          type: integer
+          description: Line number of match (1-indexed)
+          example: 15
+        column:
+          type: integer
+          description: Column number of match (1-indexed)
+          example: 1
+        content:
+          type: string
+          description: Line content (or context if contextLines > 0)
+          example: "function handleClick() {"
+        match:
+          type: string
+          description: The actual matched text
+          example: "function"
+
+    GrepResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrepResult"
+        count:
+          type: integer
+          description: Total number of results
+          example: 42
+
+    FindRequest:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Starting path for search (defaults to user root)
+          example: "/documents"
+        name:
+          type: string
+          description: Name pattern (glob-like with * and ?)
+          example: "*.md"
+        type:
+          type: string
+          enum: [file, folder, all]
+          description: Filter by type
+          default: all
+        minSize:
+          type: integer
+          description: Minimum file size in bytes
+          example: 100
+        maxSize:
+          type: integer
+          description: Maximum file size in bytes
+          example: 1000000
+        newerThan:
+          type: integer
+          description: Only files modified after this Unix timestamp
+          example: 1703001600
+        olderThan:
+          type: integer
+          description: Only files modified before this Unix timestamp
+          example: 1703088000
+        maxDepth:
+          type: integer
+          description: Maximum directory depth to search
+          example: 3
+        maxResults:
+          type: integer
+          description: Maximum number of results to return
+          default: 1000
+          maximum: 10000
+
+    FindResult:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Full file/folder path
+          example: "/johndoe/documents/readme.md"
+        name:
+          type: string
+          description: File or folder name
+          example: "readme.md"
+        type:
+          type: string
+          enum: [file, folder]
+        size:
+          type: integer
+          description: Size in bytes
+          example: 1024
+        created_at:
+          type: integer
+          description: Creation timestamp (Unix)
+          example: 1703001600
+        updated_at:
+          type: integer
+          description: Last modification timestamp (Unix)
+          example: 1703088000
+
+    FindResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/FindResult"
+        count:
+          type: integer
+          description: Total number of results
+          example: 15
+
+    StatResult:
+      type: object
+      properties:
+        path:
+          type: string
+          example: "/johndoe/documents/readme.md"
+        name:
+          type: string
+          example: "readme.md"
+        type:
+          type: string
+          enum: [file, folder]
+        size:
+          type: integer
+          description: Size in bytes
+          example: 1024
+        created_at:
+          type: integer
+          description: Creation timestamp (Unix)
+          example: 1703001600
+        updated_at:
+          type: integer
+          description: Last modification timestamp (Unix)
+          example: 1703088000
+        content:
+          type: string
+          description: File content (only for files)
+
+    DuResult:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Path analyzed
+          example: "/johndoe/documents"
+        totalSize:
+          type: integer
+          description: Total size in bytes
+          example: 1048576
+        fileCount:
+          type: integer
+          description: Number of files
+          example: 42
+        folderCount:
+          type: integer
+          description: Number of folders
+          example: 8
+
+    WcResult:
+      type: object
+      properties:
+        lines:
+          type: integer
+          description: Number of lines
+          example: 150
+        words:
+          type: integer
+          description: Number of words
+          example: 1200
+        chars:
+          type: integer
+          description: Number of characters
+          example: 8500
+        bytes:
+          type: integer
+          description: Size in bytes
+          example: 8500
+
+    WebSocketSession:
+      type: object
+      description: Represents an active WebSocket session for collaborative editing
+      properties:
+        path:
+          type: string
+          description: File path this session is editing
+          example: "/johndoe/documents/readme.md"
+        username:
+          type: string
+          description: Username of the session owner
+          example: "johndoe"
+        name:
+          type: string
+          description: Display name of the user
+          example: "John Doe"
+        profile_image_url:
+          type: string
+          format: uri
+          description: URL to user's profile image
+
+    WSMessage:
+      type: object
+      description: Base WebSocket message structure
+      properties:
+        type:
+          type: string
+          description: Message type identifier
+          enum: [init, join, leave, text, file_change, error]
+        text:
+          type: string
+          description: Content text (for text messages)
+        version:
+          type: integer
+          description: Document version number
+        sessionId:
+          type: string
+          format: uuid
+          description: Session identifier
+        sessionCount:
+          type: integer
+          description: Number of active sessions
+        username:
+          type: string
+          description: Username associated with the message
+        fromSession:
+          type: string
+          description: Originating session ID or path
+        path:
+          type: string
+          description: File path
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebSocketSession"
+          description: List of active sessions
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileInfo"
+          description: List of files (for file-related messages)
+        line:
+          type: integer
+          description: Cursor line position
+        column:
+          type: integer
+          description: Cursor column position
+        action:
+          type: string
+          enum: [create, update, delete, move, rename, copy]
+          description: File change action type
+
+x-terminal-commands:
+  description: |
+    Mapping of terminal commands to API endpoints for terminal client implementation.
+
+  commands:
+    ls:
+      endpoint: "GET /{path}"
+      description: List directory contents
+      example: "ls /documents"
+
+    cat:
+      endpoint: "GET /{path}"
+      description: Display file contents
+      example: "cat /documents/readme.md"
+
+    echo:
+      endpoints:
+        write: "PUT /{path}"
+        append: "POST /api/append"
+      description: Write or append to files
+      examples:
+        - "echo 'content' > file.txt  # PUT"
+        - "echo 'content' >> file.txt # POST /api/append"
+
+    touch:
+      endpoint: "POST /api/create-file"
+      description: Create empty file
+      example: "touch newfile.txt"
+
+    mkdir:
+      endpoint: "POST /api/create-folder"
+      description: Create directory
+      example: "mkdir newfolder"
+
+    rm:
+      endpoint: "DELETE /{path}"
+      description: Remove file or directory
+      examples:
+        - "rm file.txt"
+        - "rm -r folder/"
+
+    mv:
+      endpoint: "POST /api/move-node"
+      description: Move or rename file/folder
+      example: "mv old.txt new.txt"
+
+    cp:
+      endpoint: "POST /api/copy-node"
+      description: Copy file or folder
+      example: "cp source.txt dest.txt"
+
+    head:
+      endpoint: "POST /api/head"
+      description: Display first lines of file
+      example: "head -n 20 file.txt"
+
+    tail:
+      endpoint: "POST /api/tail"
+      description: Display last lines of file
+      example: "tail -n 20 file.txt"
+
+    grep:
+      endpoint: "POST /api/grep"
+      description: Search file contents
+      examples:
+        - "grep 'pattern' file.txt"
+        - "grep -r 'pattern' /documents"
+        - "grep -i 'pattern' *.js"
+        - "grep -E 'regex' file.txt"
+
+    find:
+      endpoint: "POST /api/find"
+      description: Find files by criteria
+      examples:
+        - "find /documents -name '*.md'"
+        - "find . -type f -size +1000"
+        - "find . -mtime -7"
+
+    wc:
+      endpoint: "POST /api/wc"
+      description: Word, line, character count
+      example: "wc file.txt"
+
+    du:
+      endpoint: "POST /api/du"
+      description: Disk usage
+      example: "du /documents"
+
+    stat:
+      endpoint: "POST /api/stat"
+      description: File statistics
+      example: "stat file.txt"
+
+    pwd:
+      description: Print working directory (client-side)
+      note: "Maintained in terminal client state"
+
+    cd:
+      description: Change directory (client-side)
+      note: "Maintained in terminal client state, validated via GET"
+
+    whoami:
+      endpoint: "GET /me"
+      description: Current user info
+      example: "whoami"
+
+    clear:
+      description: Clear terminal (client-side)
+      note: "Handled entirely in terminal client"
+
+x-websocket-api:
+  tags:
+    - WebSocket
+  description: |
+    The server supports real-time collaborative editing via WebSocket connections.
+    WebSocket connections enable multiple users to edit the same file simultaneously
+    with live updates and presence awareness.
+
+  connection:
+    url: "wss://server.agent-pod.com/{path}"
+    description: |
+      Connect to a WebSocket for real-time collaboration on a specific file.
+      The path is automatically prefixed with the authenticated user's username.
+    headers:
+      Upgrade: websocket
+      Authorization: Bearer {access_token}
+    example: |
+      const ws = new WebSocket('wss://server.agent-pod.com/documents/readme.md', [], {
+        headers: { 'Authorization': 'Bearer YOUR_ACCESS_TOKEN' }
+      });
+
+  messages:
+    server-to-client:
+      init:
+        description: Sent immediately after connection with current file state
+        example: |
+          {
+            "type": "init",
+            "text": "# Hello World\n\nThis is my file.",
+            "version": 42,
+            "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+            "sessionCount": 2,
+            "sessions": [...],
+            "username": "johndoe"
+          }
+
+      join:
+        description: Broadcast when a new client connects to the file
+        example: |
+          {
+            "type": "join",
+            "sessionId": "550e8400-e29b-41d4-a716-446655440001",
+            "username": "janedoe",
+            "path": "/janedoe/readme.md",
+            "sessionCount": 3,
+            "sessions": [...]
+          }
+
+      leave:
+        description: Broadcast when a client disconnects
+        example: |
+          {
+            "type": "leave",
+            "sessionId": "550e8400-e29b-41d4-a716-446655440001",
+            "username": "janedoe",
+            "path": "/janedoe/readme.md",
+            "sessionCount": 2,
+            "sessions": [...]
+          }
+
+      text:
+        description: Broadcast when another client updates the file content
+        example: |
+          {
+            "type": "text",
+            "text": "# Hello World\n\nUpdated content here.",
+            "version": 43,
+            "fromSession": "550e8400-e29b-41d4-a716-446655440000",
+            "line": 3,
+            "column": 15
+          }
+
+      file_change:
+        description: Broadcast when file system changes occur
+        example: |
+          {
+            "type": "file_change",
+            "action": "rename",
+            "path": "/johndoe/documents/new-name.md",
+            "fromSession": "/johndoe/documents/old-name.md"
+          }
+
+      error:
+        description: Sent when an error occurs
+        example: |
+          {
+            "type": "error",
+            "message": "Cannot edit folder content"
+          }
+
+    client-to-server:
+      text:
+        description: Send updated file content to the server
+        example: |
+          {
+            "type": "text",
+            "text": "# Updated Content\n\nNew text here.",
+            "version": 44,
+            "line": 3,
+            "column": 10
+          }
